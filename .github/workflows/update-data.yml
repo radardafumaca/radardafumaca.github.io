@@ -1,29 +1,46 @@
-name: Atualizar focos
+name: Atualizar e publicar
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Uma publicação por vez; a mais nova substitui a que estiver na fila.
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  update:
+  publicar:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python scripts/update_data.py
+      - name: Baixar focos
+        run: python scripts/update_data.py
         env:
           # Opcional: sem o secret, o script usa os arquivos abertos de 48 h.
           FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
-      - name: Commitar se mudou
+      - name: Montar o site
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/focos.json
-          git diff --cached --quiet || git commit -m "dados: focos do INPE"
-          git push
+          mkdir -p _site/data
+          cp index.html _site/
+          cp data/focos.json _site/data/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

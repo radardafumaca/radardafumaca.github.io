@@ -19,11 +19,11 @@ A página precisa ser aberta por um servidor (não pelo arquivo direto), porque 
 - `scripts/build_municipios.py` gera `data/municipios.json` com os limites dos municípios do raio. Só precisa rodar de novo se o raio mudar.
 - `index.html` é um site estático: desenha os focos com Leaflet e busca qualidade do ar (PM2.5, AQI) e vento ao vivo na Open-Meteo.
 - O índice "municípios que mais mandam fumaça" soma os focos de cada município, pesando pela distância até Manaus e pelo alinhamento com a direção do vento das últimas 6 h. É uma estimativa relativa, não uma medição.
-- `.github/workflows/update-data.yml` atualiza `data/focos.json` a cada 30 minutos quando o projeto estiver no GitHub.
+- `.github/workflows/update-data.yml` roda a cada 30 minutos no GitHub: baixa os focos e publica o site no GitHub Pages. O `data/focos.json` não vai para o git; ele é gerado na hora, localmente ou pela Action.
 
-## Publicar
+## Publicação
 
-Qualquer hospedagem de site estático serve (GitHub Pages, Vercel, Netlify). Com o repositório no GitHub, a Action mantém os dados atualizados e cada commit dela republica o site.
+O site fica no GitHub Pages, publicado pela Action (em Settings → Pages, a fonte é "GitHub Actions"). A chave da FIRMS vai no secret `FIRMS_MAP_KEY` do repositório.
 
 ## Fontes
 
