@@ -17,6 +17,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/update_data.py
+        env:
+          # Opcional: sem o secret, o script usa os arquivos abertos de 48 h.
+          FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
       - name: Commitar se mudou
         run: |
           git config user.name "github-actions[bot]"

@@ -9,6 +9,8 @@ python3 scripts/update_data.py   # baixa os focos da NASA FIRMS e gera data/foco
 python3 -m http.server 8765      # abra http://localhost:8765
 ```
 
+Com uma chave da FIRMS (grátis em https://firms.modaps.eosdis.nasa.gov/api/map_key/), crie um `.env` com `FIRMS_MAP_KEY=sua_chave`: o script passa a usar a API, baixa só a região e busca 5 dias em vez de 48 h. No GitHub, cadastre a chave como secret `FIRMS_MAP_KEY`. O `.env` está no `.gitignore`.
+
 A página precisa ser aberta por um servidor (não pelo arquivo direto), porque carrega `data/focos.json`.
 
 ## Como funciona

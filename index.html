@@ -21,6 +21,7 @@
     --fire-new: #9f1d14;
     --fire-day: #e8590c;
     --fire-old: #f0a83c;
+    --fire-older: #9a8f7a;
     --ring: #1b2220;
     --aqi-good: #2f9e44;
     --aqi-moderate: #c99700;
@@ -44,6 +45,7 @@
       --fire-new: #ff5a43;
       --fire-day: #ff922b;
       --fire-old: #ffd08a;
+      --fire-older: #8a8270;
       --ring: #e7ebe8;
       --aqi-good: #51cf66;
       --aqi-moderate: #fcc419;
@@ -64,6 +66,7 @@
     --fire-new: #ff5a43;
     --fire-day: #ff922b;
     --fire-old: #ffd08a;
+    --fire-older: #8a8270;
     --ring: #e7ebe8;
     --aqi-good: #51cf66;
     --aqi-moderate: #fcc419;
@@ -275,12 +278,14 @@
       <button type="button" id="win-6" data-hours="6" aria-pressed="false">6h</button>
       <button type="button" id="win-24" data-hours="24" aria-pressed="true">24h</button>
       <button type="button" id="win-48" data-hours="48" aria-pressed="false">48h</button>
+      <button type="button" id="win-120" data-hours="120" aria-pressed="false" hidden>5 dias</button>
     </div>
     <div class="legend" aria-hidden="true">
       <span class="legend-title">Foco detectado há</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-new)"></span>menos de 6 h</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-day)"></span>6 a 24 h</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-old)"></span>24 a 48 h</span>
+      <span class="legend-row" id="legend-older" hidden><span class="dot" style="background: var(--fire-older)"></span>2 a 5 dias</span>
     </div>
   </div>
 
@@ -388,7 +393,8 @@
   function ageColor(ageH) {
     if (ageH < 6) return css("--fire-new");
     if (ageH < 24) return css("--fire-day");
-    return css("--fire-old");
+    if (ageH < 48) return css("--fire-old");
+    return css("--fire-older");
   }
 
   function visibleFocos() {
@@ -408,7 +414,7 @@
         radius: radius,
         stroke: false,
         fillColor: ageColor(ageH),
-        fillOpacity: ageH < 6 ? 0.9 : 0.7
+        fillOpacity: ageH < 6 ? 0.9 : ageH < 48 ? 0.7 : 0.45
       }).bindPopup(
         "<strong>" + muni.nome + "</strong><br>" +
         "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
@@ -657,6 +663,10 @@
 
     if (data.status === "fulfilled") {
       state.data = data.value;
+      if (state.data.janela_horas >= 120) {
+        document.getElementById("win-120").hidden = false;
+        document.getElementById("legend-older").hidden = false;
+      }
       var updated = new Date(state.data.atualizado_em);
       document.getElementById("stamp").textContent = "Focos da NASA FIRMS atualizados em " + fmtTime.format(updated) + " (hora de Manaus)";
       drawRings();

@@ -1,6 +1,9 @@
 """Baixa os focos de calor da NASA FIRMS e gera data/focos.json com a região de Manaus.
 
-Do INPE vêm só os dias sem chuva e o risco de fogo de cada município.
+Com FIRMS_MAP_KEY (no ambiente ou no .env), usa a API e busca 5 dias; sem ela,
+usa os arquivos abertos de 48 h. Do INPE vêm só os dias sem chuva e o risco de
+fogo de cada município.
+
 Usa só a biblioteca padrão. Rode na raiz do projeto:
     python3 scripts/update_data.py
 """
@@ -8,6 +11,7 @@ import csv
 import io
 import json
 import math
+import os
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -16,11 +20,21 @@ from pathlib import Path
 
 MANAUS = (-3.119, -60.0217)
 RADIUS_KM = 300
-WINDOW_HOURS = 48
-DATA = Path(__file__).resolve().parent.parent / "data"
+ROOT = Path(__file__).resolve().parent.parent
+DATA = ROOT / "data"
 OUT = DATA / "focos.json"
 
-# Arquivos abertos da FIRMS (sem chave), com as últimas 48 h da América do Sul.
+# Com chave (FIRMS_MAP_KEY), a API da FIRMS devolve só a região e até 5 dias.
+FIRMS_API = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{key}/{source}/{area}/{days}"
+FIRMS_API_DAYS = 5
+FIRMS_API_SOURCES = [
+    ("VIIRS_SNPP_NRT", "VIIRS"),
+    ("VIIRS_NOAA20_NRT", "VIIRS"),
+    ("VIIRS_NOAA21_NRT", "VIIRS"),
+    ("MODIS_NRT", "MODIS"),
+]
+
+# Sem chave, os arquivos abertos da FIRMS trazem as últimas 48 h da América do Sul.
 FIRMS = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/"
 FIRMS_SOURCES = [
     ("suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_South_America_48h.csv", "VIIRS"),
@@ -35,12 +49,32 @@ SATELITES = {
     "N21": "NOAA-21",
     "2": "NOAA-21",
     "T": "Terra",
+    "Terra": "Terra",
     "A": "Aqua",
+    "Aqua": "Aqua",
 }
 INPE_DAILY = (
     "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/"
     "focos_diario_br_{date}.csv"
 )
+
+
+def firms_key():
+    key = os.environ.get("FIRMS_MAP_KEY", "").strip()
+    env_file = ROOT / ".env"
+    if not key and env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() == "FIRMS_MAP_KEY":
+                key = value.strip().strip('"').strip("'")
+    return key or None
+
+
+def region_bbox():
+    # Retângulo que contém o círculo do raio, no formato oeste,sul,leste,norte.
+    dlat = RADIUS_KM / 111.2
+    dlon = RADIUS_KM / (111.2 * math.cos(math.radians(MANAUS[0])))
+    return f"{MANAUS[1] - dlon:.3f},{MANAUS[0] - dlat:.3f},{MANAUS[1] + dlon:.3f},{MANAUS[0] + dlat:.3f}"
 
 
 def distance_km(lat1, lon1, lat2, lon2):
@@ -113,12 +147,26 @@ class Municipios:
 
 # ---------- fontes ----------
 
-def firms_focos(cutoff):
+def firms_texts(key):
+    if key:
+        area = region_bbox()
+        for source, sensor in FIRMS_API_SOURCES:
+            url = FIRMS_API.format(key=key, source=source, area=area, days=FIRMS_API_DAYS)
+            text = download(url)
+            # A API responde 200 com uma mensagem de erro em texto quando a chave é inválida.
+            if text and not text.startswith("latitude"):
+                raise RuntimeError(f"FIRMS recusou {source}: {text.strip()[:200]}")
+            yield source, sensor, text
+    else:
+        for path, sensor in FIRMS_SOURCES:
+            yield path, sensor, download(FIRMS + path)
+
+
+def firms_focos(cutoff, key):
     focos = []
-    for path, sensor in FIRMS_SOURCES:
-        text = download(FIRMS + path)
+    for name, sensor, text in firms_texts(key):
         if not text:
-            print(f"FIRMS sem dados: {path}")
+            print(f"FIRMS sem dados: {name}")
             continue
         for row in csv.DictReader(io.StringIO(text)):
             lat, lon = float(row["latitude"]), float(row["longitude"])
@@ -172,10 +220,12 @@ def inpe_condicoes(now):
 
 def main():
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=WINDOW_HOURS)
+    key = firms_key()
+    window_hours = FIRMS_API_DAYS * 24 if key else 48
+    cutoff = now - timedelta(hours=window_hours)
     municipios = Municipios(DATA / "municipios.json")
 
-    focos = firms_focos(cutoff)
+    focos = firms_focos(cutoff, key)
     try:
         condicoes = inpe_condicoes(now)
     except (urllib.error.URLError, TimeoutError) as error:
@@ -197,12 +247,12 @@ def main():
             "codigo_ibge": code,
             "nome": s["m"]["nome"],
             "estado": s["m"]["estado"],
-            "focos_48h": s["focos"],
+            "focos": s["focos"],
             "dist_min_km": round(s["dist_min"]),
             "dias_sem_chuva": extra.get("dias_sem_chuva"),
             "risco_fogo": extra.get("risco_fogo"),
         })
-    lista.sort(key=lambda m: -m["focos_48h"])
+    lista.sort(key=lambda m: -m["focos"])
     indice = {m["codigo_ibge"]: i for i, m in enumerate(lista)}
 
     fontes = sorted({f["fonte"] for f in focos})
@@ -210,10 +260,10 @@ def main():
     focos.sort(key=lambda f: f["when"])
     payload = {
         "atualizado_em": now.isoformat(timespec="minutes"),
-        "fonte": "NASA FIRMS",
+        "fonte": "NASA FIRMS (API)" if key else "NASA FIRMS (arquivos abertos)",
         "centro": MANAUS,
         "raio_km": RADIUS_KM,
-        "janela_horas": WINDOW_HOURS,
+        "janela_horas": window_hours,
         "satelites": fontes,
         "municipios": lista,
         # [lat, lon, minutos desde 1970 (UTC), índice do município, FRP em MW, índice do satélite]
@@ -224,7 +274,8 @@ def main():
         ],
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"{len(focos)} focos em {len(lista)} municípios -> {OUT} ({OUT.stat().st_size // 1024} KB)")
+    origem = "API com chave" if key else "arquivos abertos"
+    print(f"{len(focos)} focos ({window_hours} h, {origem}) em {len(lista)} municípios -> {OUT} ({OUT.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":
