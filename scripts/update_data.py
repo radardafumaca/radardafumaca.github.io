@@ -1,5 +1,6 @@
-"""Baixa os focos de calor do INPE e gera data/focos.json com a região de Manaus.
+"""Baixa os focos de calor da NASA FIRMS e gera data/focos.json com a região de Manaus.
 
+Do INPE vêm só os dias sem chuva e o risco de fogo de cada município.
 Usa só a biblioteca padrão. Rode na raiz do projeto:
     python3 scripts/update_data.py
 """
@@ -16,11 +17,30 @@ from pathlib import Path
 MANAUS = (-3.119, -60.0217)
 RADIUS_KM = 300
 WINDOW_HOURS = 48
-DAILY_URL = (
+DATA = Path(__file__).resolve().parent.parent / "data"
+OUT = DATA / "focos.json"
+
+# Arquivos abertos da FIRMS (sem chave), com as últimas 48 h da América do Sul.
+FIRMS = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/"
+FIRMS_SOURCES = [
+    ("suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_South_America_48h.csv", "VIIRS"),
+    ("noaa-20-viirs-c2/csv/J1_VIIRS_C2_South_America_48h.csv", "VIIRS"),
+    ("noaa-21-viirs-c2/csv/J2_VIIRS_C2_South_America_48h.csv", "VIIRS"),
+    ("modis-c6.1/csv/MODIS_C6_1_South_America_48h.csv", "MODIS"),
+]
+SATELITES = {
+    "N": "Suomi NPP",
+    "N20": "NOAA-20",
+    "1": "NOAA-20",
+    "N21": "NOAA-21",
+    "2": "NOAA-21",
+    "T": "Terra",
+    "A": "Aqua",
+}
+INPE_DAILY = (
     "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/"
     "focos_diario_br_{date}.csv"
 )
-OUT = Path(__file__).resolve().parent.parent / "data" / "focos.json"
 
 
 def distance_km(lat1, lon1, lat2, lon2):
@@ -39,16 +59,9 @@ def number(value):
     return None if n <= -999 else n
 
 
-def nome_proprio(texto):
-    minusculas = {"de", "da", "do", "das", "dos", "e"}
-    palavras = texto.lower().split()
-    return " ".join(p if i and p in minusculas else p.capitalize() for i, p in enumerate(palavras))
-
-
-def fetch_day(day):
-    url = DAILY_URL.format(date=day.strftime("%Y%m%d"))
+def download(url):
     try:
-        with urllib.request.urlopen(url, timeout=60) as response:
+        with urllib.request.urlopen(url, timeout=120) as response:
             return response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as error:
         if error.code == 404:
@@ -56,69 +69,159 @@ def fetch_day(day):
         raise
 
 
+# ---------- municípios ----------
+
+def inside_ring(lon, lat, ring):
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        xi, yi = ring[i]
+        xj, yj = ring[j]
+        if (yi > lat) != (yj > lat) and lon < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+class Municipios:
+    def __init__(self, path):
+        self.items = []
+        for code, m in json.loads(path.read_text(encoding="utf-8")).items():
+            points = [p for polygon in m["poligonos"] for p in polygon[0]]
+            lons = [p[0] for p in points]
+            lats = [p[1] for p in points]
+            self.items.append({
+                "code": code,
+                "nome": m["nome"],
+                "estado": m["estado"],
+                "poligonos": m["poligonos"],
+                "bbox": (min(lons), min(lats), max(lons), max(lats)),
+                "centro": (sum(lats) / len(lats), sum(lons) / len(lons)),
+            })
+
+    def locate(self, lat, lon):
+        for m in self.items:
+            x0, y0, x1, y1 = m["bbox"]
+            if not (x0 <= lon <= x1 and y0 <= lat <= y1):
+                continue
+            for polygon in m["poligonos"]:
+                if inside_ring(lon, lat, polygon[0]) and not any(inside_ring(lon, lat, h) for h in polygon[1:]):
+                    return m
+        # Foco sobre um rio largo ou na borda simplificada: usa o município mais próximo.
+        return min(self.items, key=lambda m: distance_km(lat, lon, *m["centro"]))
+
+
+# ---------- fontes ----------
+
+def firms_focos(cutoff):
+    focos = []
+    for path, sensor in FIRMS_SOURCES:
+        text = download(FIRMS + path)
+        if not text:
+            print(f"FIRMS sem dados: {path}")
+            continue
+        for row in csv.DictReader(io.StringIO(text)):
+            lat, lon = float(row["latitude"]), float(row["longitude"])
+            dist = distance_km(*MANAUS, lat, lon)
+            if dist > RADIUS_KM:
+                continue
+            # Descarta detecções de baixa confiança (VIIRS "l", MODIS abaixo de 30%).
+            conf = row["confidence"].strip()
+            if (sensor == "VIIRS" and conf == "l") or (sensor == "MODIS" and (number(conf) or 0) < 30):
+                continue
+            when = datetime.strptime(row["acq_date"] + row["acq_time"].zfill(4), "%Y-%m-%d%H%M").replace(tzinfo=timezone.utc)
+            if when < cutoff:
+                continue
+            satelite = SATELITES.get(row["satellite"].strip(), row["satellite"].strip())
+            focos.append({
+                "lat": lat,
+                "lon": lon,
+                "dist": dist,
+                "when": when,
+                "frp": number(row["frp"]),
+                "fonte": f"{satelite} ({sensor})",
+            })
+    return focos
+
+
+def inpe_condicoes(now):
+    """Dias sem chuva (máximo) e risco de fogo (média) por código IBGE, a partir dos focos do INPE."""
+    dias = defaultdict(list)
+    risco = defaultdict(list)
+    for offset in range(2):
+        text = download(INPE_DAILY.format(date=(now - timedelta(days=offset)).strftime("%Y%m%d")))
+        if not text:
+            continue
+        for row in csv.DictReader(io.StringIO(text)):
+            if distance_km(*MANAUS, float(row["lat"]), float(row["lon"])) > RADIUS_KM:
+                continue
+            code = row["municipio_id"].strip()
+            d, r = number(row["numero_dias_sem_chuva"]), number(row["risco_fogo"])
+            if d is not None:
+                dias[code].append(d)
+            if r is not None:
+                risco[code].append(r)
+    return {
+        code: {
+            "dias_sem_chuva": max(dias[code]) if dias[code] else None,
+            "risco_fogo": round(sum(risco[code]) / len(risco[code]), 2) if risco[code] else None,
+        }
+        for code in set(dias) | set(risco)
+    }
+
+
 def main():
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=WINDOW_HOURS)
+    municipios = Municipios(DATA / "municipios.json")
 
-    rows = []
-    for offset in range(3):
-        text = fetch_day(now - timedelta(days=offset))
-        if text:
-            rows.extend(csv.DictReader(io.StringIO(text)))
+    focos = firms_focos(cutoff)
+    try:
+        condicoes = inpe_condicoes(now)
+    except (urllib.error.URLError, TimeoutError) as error:
+        print(f"INPE indisponível, seguindo sem dias sem chuva e risco: {error}")
+        condicoes = {}
 
-    seen = set()
-    focos = []
-    municipios = defaultdict(lambda: {"focos": 0, "dist_min": None, "dias_sem_chuva": [], "risco": []})
-    for row in rows:
-        if row["id"] in seen:
-            continue
-        seen.add(row["id"])
-        lat, lon = float(row["lat"]), float(row["lon"])
-        dist = distance_km(*MANAUS, lat, lon)
-        if dist > RADIUS_KM:
-            continue
-        when = datetime.strptime(row["data_hora_gmt"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        if when < cutoff:
-            continue
-
-        nome = nome_proprio(row["municipio"])
-        m = municipios[nome]
-        m["focos"] += 1
-        m["estado"] = row["estado"]
-        m["dist_min"] = dist if m["dist_min"] is None else min(m["dist_min"], dist)
-        dias = number(row["numero_dias_sem_chuva"])
-        risco = number(row["risco_fogo"])
-        if dias is not None:
-            m["dias_sem_chuva"].append(dias)
-        if risco is not None:
-            m["risco"].append(risco)
-
-        frp = number(row["frp"])
-        focos.append([round(lat, 4), round(lon, 4), int(when.timestamp() // 60), nome, frp])
+    stats = {}
+    for f in focos:
+        m = municipios.locate(f["lat"], f["lon"])
+        f["code"] = m["code"]
+        s = stats.setdefault(m["code"], {"m": m, "focos": 0, "dist_min": f["dist"]})
+        s["focos"] += 1
+        s["dist_min"] = min(s["dist_min"], f["dist"])
 
     lista = []
-    for nome, m in municipios.items():
+    for code, s in stats.items():
+        extra = condicoes.get(code, {})
         lista.append({
-            "nome": nome,
-            "estado": nome_proprio(m["estado"]),
-            "focos_48h": m["focos"],
-            "dist_min_km": round(m["dist_min"]),
-            "dias_sem_chuva": max(m["dias_sem_chuva"]) if m["dias_sem_chuva"] else None,
-            "risco_fogo": round(sum(m["risco"]) / len(m["risco"]), 2) if m["risco"] else None,
+            "codigo_ibge": code,
+            "nome": s["m"]["nome"],
+            "estado": s["m"]["estado"],
+            "focos_48h": s["focos"],
+            "dist_min_km": round(s["dist_min"]),
+            "dias_sem_chuva": extra.get("dias_sem_chuva"),
+            "risco_fogo": extra.get("risco_fogo"),
         })
     lista.sort(key=lambda m: -m["focos_48h"])
+    indice = {m["codigo_ibge"]: i for i, m in enumerate(lista)}
 
-    nomes = [m["nome"] for m in lista]
-    indice = {nome: i for i, nome in enumerate(nomes)}
-    focos.sort(key=lambda f: f[2])
+    fontes = sorted({f["fonte"] for f in focos})
+    fonte_idx = {nome: i for i, nome in enumerate(fontes)}
+    focos.sort(key=lambda f: f["when"])
     payload = {
         "atualizado_em": now.isoformat(timespec="minutes"),
+        "fonte": "NASA FIRMS",
         "centro": MANAUS,
         "raio_km": RADIUS_KM,
         "janela_horas": WINDOW_HOURS,
+        "satelites": fontes,
         "municipios": lista,
-        # [lat, lon, minutos desde 1970 (UTC), índice do município, FRP em MW]
-        "focos": [[f[0], f[1], f[2], indice[f[3]], f[4]] for f in focos],
+        # [lat, lon, minutos desde 1970 (UTC), índice do município, FRP em MW, índice do satélite]
+        "focos": [
+            [round(f["lat"], 4), round(f["lon"], 4), int(f["when"].timestamp() // 60),
+             indice[f["code"]], f["frp"], fonte_idx[f["fonte"]]]
+            for f in focos
+        ],
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{len(focos)} focos em {len(lista)} municípios -> {OUT} ({OUT.stat().st_size // 1024} KB)")

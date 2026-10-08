@@ -306,9 +306,10 @@
 
     <section class="sources" aria-labelledby="src-title">
       <h2 id="src-title">Fontes e limites</h2>
-      <p><strong>Focos de calor:</strong> <a href="https://terrabrasilis.dpi.inpe.br/queimadas/portal/" target="_blank" rel="noopener">INPE – Programa Queimadas</a>. Cada ponto é uma detecção de satélite. Vários satélites passam pelo mesmo lugar, então um incêndio pode aparecer mais de uma vez: use os números para comparar áreas e dias, não como contagem de incêndios.</p>
+      <p><strong>Focos de calor:</strong> <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener">NASA FIRMS</a>, com os satélites Suomi NPP, NOAA-20 e NOAA-21 (sensor VIIRS, resolução de 375 m) e Terra e Aqua (sensor MODIS, 1 km). Detecções de baixa confiança ficam de fora. Cada ponto é uma detecção: vários satélites passam pelo mesmo lugar, então um incêndio pode aparecer mais de uma vez. Use os números para comparar áreas e dias, não como contagem de incêndios.</p>
+      <p><strong>Municípios:</strong> limites do <a href="https://www.ibge.gov.br/geociencias/organizacao-do-territorio/malhas-territoriais.html" target="_blank" rel="noopener">IBGE</a>. Focos sobre rios largos entram no município mais próximo.</p>
       <p><strong>Qualidade do ar e vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (modelo CAMS, do Copernicus). O PM2.5 é estimado por modelo numa grade de cerca de 40 km, não medido por sensor em cada bairro.</p>
-      <p><strong>Dias sem chuva e risco de fogo:</strong> calculados pelo INPE para o local de cada foco. O risco vai de 0 a 1; acima de 0,7 é considerado alto ou crítico.</p>
+      <p><strong>Dias sem chuva e risco de fogo:</strong> <a href="https://terrabrasilis.dpi.inpe.br/queimadas/portal/" target="_blank" rel="noopener">INPE – Programa Queimadas</a>, calculados nos focos que o INPE detectou em cada município. O risco vai de 0 a 1; acima de 0,7 é considerado alto ou crítico.</p>
     </section>
   </aside>
 </div>
@@ -411,6 +412,7 @@
       }).bindPopup(
         "<strong>" + muni.nome + "</strong><br>" +
         "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
+        "Satélite " + state.data.satelites[f[5]] + "<br>" +
         (f[4] ? "Potência radiativa: " + fmtInt.format(f[4]) + " MW<br>" : "") +
         Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus"
       ).addTo(fireLayer);
@@ -656,7 +658,7 @@
     if (data.status === "fulfilled") {
       state.data = data.value;
       var updated = new Date(state.data.atualizado_em);
-      document.getElementById("stamp").textContent = "Focos do INPE atualizados em " + fmtTime.format(updated) + " (hora de Manaus)";
+      document.getElementById("stamp").textContent = "Focos da NASA FIRMS atualizados em " + fmtTime.format(updated) + " (hora de Manaus)";
       drawRings();
       renderAll();
     } else {
