@@ -31,4 +31,4 @@ O site fica no GitHub Pages, publicado pela Action (em Settings → Pages, a fon
 - Dias sem chuva e risco de fogo: INPE, Programa Queimadas
 - Limites dos municípios: IBGE
 - Qualidade do ar e clima: Open-Meteo (modelo CAMS, Copernicus)
-- Mapa: OpenStreetMap e CARTO
+- Mapa: OpenStreetMap

@@ -22,6 +22,7 @@
     --fire-day: #e8590c;
     --fire-old: #f0a83c;
     --fire-older: #9a8f7a;
+    --tile-filter: saturate(0.3) contrast(0.92) brightness(1.03);
     --ring: #1b2220;
     --aqi-good: #2f9e44;
     --aqi-moderate: #c99700;
@@ -46,6 +47,7 @@
       --fire-day: #ff922b;
       --fire-old: #ffd08a;
       --fire-older: #8a8270;
+      --tile-filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.85) contrast(0.9);
       --ring: #e7ebe8;
       --aqi-good: #51cf66;
       --aqi-moderate: #fcc419;
@@ -67,6 +69,7 @@
     --fire-day: #ff922b;
     --fire-old: #ffd08a;
     --fire-older: #8a8270;
+    --tile-filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.85) contrast(0.9);
     --ring: #e7ebe8;
     --aqi-good: #51cf66;
     --aqi-moderate: #fcc419;
@@ -230,6 +233,8 @@
   .error { color: var(--aqi-bad); font-size: 14px; margin: 0; }
 
   .leaflet-container { font: 13px/1.4 var(--font-body); }
+  /* o mapa do OSM é muito colorido: dessatura para os focos ficarem em primeiro plano */
+  .leaflet-tile-pane { filter: var(--tile-filter); }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink); }
   .leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 85%, transparent) !important; color: var(--muted); }
   .leaflet-control-attribution a { color: var(--muted); }
@@ -359,18 +364,11 @@
 
   // ---------- mapa ----------
   var map = L.map("map", { preferCanvas: true, zoomControl: true, attributionControl: true }).setView(MANAUS, 7);
-  var tiles = null;
-  function setTiles() {
-    var dark = document.documentElement.getAttribute("data-theme") === "dark" ||
-      (document.documentElement.getAttribute("data-theme") !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    if (tiles) map.removeLayer(tiles);
-    tiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/" + (dark ? "dark_all" : "light_all") + "/{z}/{x}/{y}{r}.png", {
-      maxZoom: 14,
-      subdomains: "abcd",
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-    }).addTo(map);
-  }
-  setTiles();
+  // O tema (claro/escuro) do mapa vem do filtro CSS --tile-filter.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 14,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(map);
 
   var fireLayer = L.layerGroup().addTo(map);
   var ringLayer = L.layerGroup().addTo(map);
@@ -554,7 +552,7 @@
       out.push('<text x="' + (padL - 4) + '" y="' + (y(g) + 3).toFixed(1) + '" text-anchor="end" font-size="9" font-family="IBM Plex Mono, monospace" fill="' + muted + '">' + g + "</text>");
     }
     out.push('<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(OMS_PM25).toFixed(1) + '" y2="' + y(OMS_PM25).toFixed(1) + '" stroke="' + good + '" stroke-width="1.2" stroke-dasharray="4 3"/>');
-    out.push('<text x="' + (padL + 4) + '" y="' + (y(OMS_PM25) - 4).toFixed(1) + '" font-size="9" font-family="IBM Plex Mono, monospace" fill="' + good + '">OMS 15</text>');
+    out.push('<text x="' + (W - padR - 2) + '" y="' + (y(OMS_PM25) + 11).toFixed(1) + '" text-anchor="end" font-size="9" font-family="IBM Plex Mono, monospace" fill="' + good + '">OMS 15</text>');
     if (past.length > 1) {
       out.push('<path d="' + path(past) + "L" + x(past[past.length - 1][0]).toFixed(1) + "," + y(0) + "L" + x(past[0][0]).toFixed(1) + "," + y(0) + 'Z" fill="' + ember + '" fill-opacity="0.12"/>');
       out.push('<path d="' + path(past) + '" fill="none" stroke="' + ember + '" stroke-width="1.8" stroke-linejoin="round"/>');
@@ -632,7 +630,6 @@
   });
 
   function onThemeChange() {
-    setTiles();
     if (state.data) { drawRings(); renderAll(); }
     if (state.air) renderAir(state.air, state.weather);
   }
