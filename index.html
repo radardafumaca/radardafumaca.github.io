@@ -376,8 +376,7 @@
   // Área do raio de 300 km; o mapa abre enquadrado nela e não deixa se afastar muito.
   var regionBounds = L.latLng(MANAUS).toBounds(2 * 300 * 1000);
   var map = L.map("map", {
-    renderer: L.canvas({ padding: 0.5, tolerance: 5 }),
-    zoomSnap: 0.25,
+    zoomSnap: 0.5,
     zoomDelta: 0.5,
     wheelPxPerZoomLevel: 90,
     minZoom: 5.5,
@@ -411,19 +410,84 @@
   });
   map.addControl(new ResetControl());
 
-  // Os pontos crescem ao aproximar e encolhem na visão geral, para não virarem uma mancha.
-  function zoomScale() {
-    return Math.min(2.2, Math.max(0.55, Math.pow(1.35, map.getZoom() - 7.5)));
-  }
-  function fireRadius(frp) {
-    var base = frp ? Math.min(7, 2.5 + Math.sqrt(frp) / 4) : 3;
-    return Math.max(1.5, base * zoomScale());
-  }
-  map.on("zoomend", function () {
-    fireLayer.eachLayer(function (layer) { layer.setRadius(fireRadius(layer.options.frp)); });
+  // Todos os focos numa única camada de pixels: com milhares de pontos, um objeto
+  // do Leaflet por foco deixa o zoom e a troca de período lentos.
+  var FireCanvas = L.Layer.extend({
+    onAdd: function (m) {
+      this._canvas = L.DomUtil.create("canvas", "leaflet-zoom-animated");
+      m.getPane("overlayPane").appendChild(this._canvas);
+      this._points = [];
+      this._screen = new Float32Array(0);
+      m.on("moveend resize", this._reset, this);
+      m.on("zoomanim", this._animateZoom, this);
+      this._reset();
+    },
+    onRemove: function (m) {
+      L.DomUtil.remove(this._canvas);
+      m.off("moveend resize", this._reset, this);
+      m.off("zoomanim", this._animateZoom, this);
+    },
+    setPoints: function (points) {
+      this._points = points;
+      if (this._map) this._reset();
+    },
+    _animateZoom: function (e) {
+      // durante a animação só escala a imagem pronta; redesenha no fim (mesma conta do Leaflet)
+      var m = this._map, scale = m.getZoomScale(e.zoom, this._zoom);
+      var half = m.getSize().multiplyBy(0.5 + this._pad);
+      var offset = half.multiplyBy(-scale).add(m.project(this._center, e.zoom)).subtract(m._getNewPixelOrigin(e.center, e.zoom));
+      L.DomUtil.setTransform(this._canvas, offset, scale);
+    },
+    // margem desenhada além da tela, para não aparecer borda vazia ao arrastar
+    _pad: 0.15,
+    _reset: function () {
+      var m = this._map, view = m.getSize(), dpr = Math.min(2, window.devicePixelRatio || 1);
+      var margin = view.multiplyBy(this._pad).round(), size = view.add(margin.multiplyBy(2));
+      var c = this._canvas;
+      this._center = m.getCenter();
+      this._zoom = m.getZoom();
+      c.width = size.x * dpr;
+      c.height = size.y * dpr;
+      c.style.width = size.x + "px";
+      c.style.height = size.y + "px";
+      L.DomUtil.setPosition(c, m.containerPointToLayerPoint(margin.multiplyBy(-1)));
+      this._draw(size, margin, dpr);
+    },
+    _draw: function (size, margin, dpr) {
+      var ctx = this._canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size.x, size.y);
+      ctx.translate(margin.x, margin.y);
+      var scale = Math.min(2.2, Math.max(0.55, Math.pow(1.35, this._map.getZoom() - 7.5)));
+      var pts = this._points, screen = new Float32Array(pts.length * 3);
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i];
+        var xy = this._map.latLngToContainerPoint(p.latlng);
+        var r = Math.max(1.5, p.base * scale);
+        screen[i * 3] = xy.x; screen[i * 3 + 1] = xy.y; screen[i * 3 + 2] = r;
+        if (xy.x < -margin.x - r || xy.y < -margin.y - r || xy.x > size.x - margin.x + r || xy.y > size.y - margin.y + r) continue;
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(xy.x, xy.y, r, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      this._screen = screen;
+    },
+    // foco mais próximo do ponto da tela, com folga de alguns pixels para o dedo
+    pointAt: function (containerPoint, slack) {
+      var s = this._screen, best = -1, bestD = Infinity;
+      for (var i = 0; i < this._points.length; i++) {
+        var dx = s[i * 3] - containerPoint.x, dy = s[i * 3 + 1] - containerPoint.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d <= s[i * 3 + 2] + slack && d < bestD) { best = i; bestD = d; }
+      }
+      return best < 0 ? null : this._points[best];
+    }
   });
 
-  var fireLayer = L.layerGroup().addTo(map);
+  var fireLayer = new FireCanvas().addTo(map);
   var ringLayer = L.layerGroup().addTo(map);
   function drawRings() {
     ringLayer.clearLayers();
@@ -441,41 +505,52 @@
       .addTo(ringLayer);
   }
 
-  function ageColor(ageH) {
-    if (ageH < 6) return css("--fire-new");
-    if (ageH < 24) return css("--fire-day");
-    if (ageH < 48) return css("--fire-old");
-    return css("--fire-older");
-  }
-
   function visibleFocos() {
     var minMin = state.nowMin - state.hours * 60;
     return state.data.focos.filter(function (f) { return f[2] >= minMin; });
   }
 
   function drawFires() {
-    fireLayer.clearLayers();
-    var focos = visibleFocos();
+    // cores lidas do CSS uma vez por desenho, não uma vez por foco
+    var colors = [css("--fire-new"), css("--fire-day"), css("--fire-old"), css("--fire-older")];
     // os mais antigos primeiro, para os recentes ficarem por cima
-    focos.forEach(function (f) {
+    fireLayer.setPoints(visibleFocos().map(function (f) {
       var ageH = (state.nowMin - f[2]) / 60;
-      var muni = state.data.municipios[f[3]];
-      L.circleMarker([f[0], f[1]], {
-        radius: fireRadius(f[4]),
-        frp: f[4],
-        stroke: false,
-        fillColor: ageColor(ageH),
-        fillOpacity: ageH < 6 ? 0.9 : ageH < 48 ? 0.7 : 0.45
-      }).bindPopup(function () {
-        // montado só quando o ponto é clicado, e não para os milhares de pontos de uma vez
-        return "<strong>" + muni.nome + "</strong><br>" +
-          "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
-          "Satélite " + state.data.satelites[f[5]] + "<br>" +
-          (f[4] ? "Potência radiativa: " + fmtInt.format(f[4]) + " MW<br>" : "") +
-          Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus";
-      }).addTo(fireLayer);
-    });
+      var band = ageH < 6 ? 0 : ageH < 24 ? 1 : ageH < 48 ? 2 : 3;
+      return {
+        f: f,
+        latlng: L.latLng(f[0], f[1]),
+        base: f[4] ? Math.min(7, 2.5 + Math.sqrt(f[4]) / 4) : 3,
+        color: colors[band],
+        alpha: band === 0 ? 0.9 : band < 3 ? 0.7 : 0.45
+      };
+    }));
   }
+
+  function popupHtml(f) {
+    var muni = state.data.municipios[f[3]];
+    return "<strong>" + muni.nome + "</strong><br>" +
+      "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
+      "Satélite " + state.data.satelites[f[5]] + "<br>" +
+      (f[4] ? "Potência radiativa: " + fmtInt.format(f[4]) + " MW<br>" : "") +
+      Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus";
+  }
+
+  map.on("click", function (e) {
+    var hit = fireLayer.pointAt(e.containerPoint, 6);
+    if (hit) L.popup().setLatLng(hit.latlng).setContent(popupHtml(hit.f)).openOn(map);
+  });
+  // cursor de mão sobre um foco; no máximo uma busca por quadro
+  var hoverQueued = false, lastMove = null;
+  map.on("mousemove", function (e) {
+    lastMove = e.containerPoint;
+    if (hoverQueued) return;
+    hoverQueued = true;
+    requestAnimationFrame(function () {
+      hoverQueued = false;
+      map.getContainer().style.cursor = fireLayer.pointAt(lastMove, 2) ? "pointer" : "";
+    });
+  });
 
   // ---------- pressão de fumaça por município ----------
   function upwindFactor(fireBearing) {
