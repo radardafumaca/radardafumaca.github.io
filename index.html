@@ -7,7 +7,8 @@
 <meta name="description" content="Focos de calor ao redor de Manaus, qualidade do ar agora e de onde vem a fumaça.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+<link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root {
@@ -22,7 +23,6 @@
     --fire-day: #e8590c;
     --fire-old: #f0a83c;
     --fire-older: #9a8f7a;
-    --tile-filter: saturate(0.3) contrast(0.92) brightness(1.03);
     --ring: #1b2220;
     --aqi-good: #2f9e44;
     --aqi-moderate: #c99700;
@@ -47,7 +47,6 @@
       --fire-day: #ff922b;
       --fire-old: #ffd08a;
       --fire-older: #8a8270;
-      --tile-filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.85) contrast(0.9);
       --ring: #e7ebe8;
       --aqi-good: #51cf66;
       --aqi-moderate: #fcc419;
@@ -69,7 +68,6 @@
     --fire-day: #ff922b;
     --fire-old: #ffd08a;
     --fire-older: #8a8270;
-    --tile-filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.85) contrast(0.9);
     --ring: #e7ebe8;
     --aqi-good: #51cf66;
     --aqi-moderate: #fcc419;
@@ -242,8 +240,6 @@
   .leaflet-bar a:hover { background: var(--ground); }
   .leaflet-bar a:focus-visible { outline: 2px solid var(--ember); outline-offset: -2px; }
   .leaflet-bar a.leaflet-disabled { color: var(--muted); opacity: 0.5; }
-  /* o mapa do OSM é muito colorido: dessatura para os focos ficarem em primeiro plano */
-  .leaflet-tile-pane { filter: var(--tile-filter); }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink); }
   .leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 85%, transparent) !important; color: var(--muted); }
   .leaflet-control-attribution a { color: var(--muted); }
@@ -387,11 +383,33 @@
   function fitRegion() { map.fitBounds(regionBounds, { padding: [16, 16] }); }
   fitRegion();
 
-  // O tema (claro/escuro) do mapa vem do filtro CSS --tile-filter.
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  // Fundo cinza da Esri, feito para ficar por baixo de dados; versão clara ou escura conforme o tema.
+  var ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_{tema}_Gray_{camada}/MapServer/tile/{z}/{y}/{x}";
+  var tileOptions = {
     maxZoom: MAX_ZOOM,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(map);
+    // só busca as imagens do nível final do zoom, não as de cada passo intermediário
+    updateWhenZooming: false,
+    // guarda mais imagens ao redor da tela, para o arrasto não mostrar áreas vazias
+    keepBuffer: 4
+  };
+  var baseLayers = [];
+  function isDark() {
+    var t = document.documentElement.getAttribute("data-theme");
+    return t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
+  function setBaseLayers() {
+    var tema = isDark() ? "Dark" : "Light";
+    if (baseLayers.length && baseLayers[0].options.tema === tema) return;
+    baseLayers.forEach(function (layer) { map.removeLayer(layer); });
+    baseLayers = [
+      L.tileLayer(ESRI.replace("{tema}", tema).replace("{camada}", "Base"), L.extend({
+        tema: tema,
+        attribution: "&copy; Esri, HERE, Garmin, OpenStreetMap e comunidade GIS"
+      }, tileOptions))
+    ];
+    baseLayers.forEach(function (layer) { layer.addTo(map); });
+  }
+  setBaseLayers();
 
   var ResetControl = L.Control.extend({
     options: { position: "topleft" },
@@ -428,6 +446,9 @@
       m.off("zoomanim", this._animateZoom, this);
     },
     setPoints: function (points) {
+      // posição de cada foco no zoom 0, calculada uma vez; no desenho basta escalar
+      var m = this._map;
+      points.forEach(function (p) { p.p0 = m.project(p.latlng, 0); });
       this._points = points;
       if (this._map) this._reset();
     },
@@ -459,10 +480,12 @@
       ctx.clearRect(0, 0, size.x, size.y);
       ctx.translate(margin.x, margin.y);
       var scale = Math.min(2.2, Math.max(0.55, Math.pow(1.35, this._map.getZoom() - 7.5)));
+      var m = this._map, k = m.getZoomScale(m.getZoom(), 0);
+      var shift = m._getMapPanePos().subtract(m.getPixelOrigin());
       var pts = this._points, screen = new Float32Array(pts.length * 3);
       for (var i = 0; i < pts.length; i++) {
         var p = pts[i];
-        var xy = this._map.latLngToContainerPoint(p.latlng);
+        var xy = { x: p.p0.x * k + shift.x, y: p.p0.y * k + shift.y };
         var r = Math.max(1.5, p.base * scale);
         screen[i * 3] = xy.x; screen[i * 3 + 1] = xy.y; screen[i * 3 + 2] = r;
         if (xy.x < -margin.x - r || xy.y < -margin.y - r || xy.x > size.x - margin.x + r || xy.y > size.y - margin.y + r) continue;
@@ -761,6 +784,7 @@
   });
 
   function onThemeChange() {
+    setBaseLayers();
     if (state.data) { drawRings(); renderAll(); }
     if (state.air) renderAir(state.air, state.weather);
   }
@@ -777,33 +801,38 @@
   var dataReq = fetch("data/focos.json", { cache: "no-cache" })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
 
-  Promise.allSettled([dataReq, airReq, weatherReq]).then(function (res) {
-    var data = res[0], air = res[1], weather = res[2];
-    state.weather = weather.status === "fulfilled" ? weather.value : null;
-    if (state.weather) state.wind = averageWind(state.weather);
+  // Cada dado aparece assim que chega: os focos não esperam a Open-Meteo.
+  dataReq.then(function (data) {
+    state.data = data;
+    if (state.data.janela_horas >= 120) {
+      document.getElementById("win-120").hidden = false;
+      document.getElementById("legend-older").hidden = false;
+    }
+    var updated = new Date(state.data.atualizado_em);
+    document.getElementById("stamp").textContent = "Focos da NASA FIRMS atualizados em " + fmtTime.format(updated) + " (hora de Manaus)";
+    drawRings();
+    renderAll();
+  }, function () {
+    document.getElementById("stamp").textContent = "Focos indisponíveis";
+    document.getElementById("munis").innerHTML = '<li class="error">Não foi possível carregar data/focos.json. Rode scripts/update_data.py e abra a página por um servidor (python3 -m http.server).</li>';
+    drawRings();
+  });
 
-    if (air.status === "fulfilled") {
-      state.air = air.value;
+  // o vento muda a rosa dos ventos e o ranking; o ar usa a umidade e a temperatura
+  var weatherDone = weatherReq.then(function (weather) {
+    state.weather = weather;
+    state.wind = averageWind(weather);
+    if (state.data) { renderCompass(); renderMunicipios(); }
+  }, function () {
+    document.getElementById("wind-text").textContent = "Não foi possível buscar o vento na Open-Meteo. Recarregue a página em alguns minutos.";
+  });
+
+  Promise.allSettled([airReq, weatherDone]).then(function (res) {
+    if (res[0].status === "fulfilled") {
+      state.air = res[0].value;
       renderAir(state.air, state.weather);
     } else {
       document.getElementById("air").innerHTML = '<p class="error">Não foi possível buscar a qualidade do ar na Open-Meteo. Recarregue a página em alguns minutos.</p>';
-    }
-
-    if (data.status === "fulfilled") {
-      state.data = data.value;
-      if (state.data.janela_horas >= 120) {
-        document.getElementById("win-120").hidden = false;
-        document.getElementById("legend-older").hidden = false;
-      }
-      var updated = new Date(state.data.atualizado_em);
-      document.getElementById("stamp").textContent = "Focos da NASA FIRMS atualizados em " + fmtTime.format(updated) + " (hora de Manaus)";
-      drawRings();
-      renderAll();
-    } else {
-      document.getElementById("stamp").textContent = "Focos indisponíveis";
-      document.getElementById("munis").innerHTML = '<li class="error">Não foi possível carregar data/focos.json. Rode scripts/update_data.py e abra a página por um servidor (python3 -m http.server).</li>';
-      drawRings();
-      renderCompass();
     }
   });
 })();
