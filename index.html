@@ -233,6 +233,15 @@
   .error { color: var(--aqi-bad); font-size: 14px; margin: 0; }
 
   .leaflet-container { font: 13px/1.4 var(--font-body); }
+  .leaflet-bar { border: 1px solid var(--line) !important; border-radius: 6px !important; box-shadow: none !important; overflow: hidden; }
+  .leaflet-bar a, .leaflet-bar a:hover {
+    width: 34px !important; height: 34px !important; line-height: 34px !important;
+    background: var(--surface); color: var(--ink); border-bottom-color: var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .leaflet-bar a:hover { background: var(--ground); }
+  .leaflet-bar a:focus-visible { outline: 2px solid var(--ember); outline-offset: -2px; }
+  .leaflet-bar a.leaflet-disabled { color: var(--muted); opacity: 0.5; }
   /* o mapa do OSM é muito colorido: dessatura para os focos ficarem em primeiro plano */
   .leaflet-tile-pane { filter: var(--tile-filter); }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink); }
@@ -363,12 +372,56 @@
   function sectorOf(deg) { return Math.floor(((deg + 22.5) % 360) / 45); }
 
   // ---------- mapa ----------
-  var map = L.map("map", { preferCanvas: true, zoomControl: true, attributionControl: true }).setView(MANAUS, 7);
+  var MAX_ZOOM = 15;
+  // Área do raio de 300 km; o mapa abre enquadrado nela e não deixa se afastar muito.
+  var regionBounds = L.latLng(MANAUS).toBounds(2 * 300 * 1000);
+  var map = L.map("map", {
+    renderer: L.canvas({ padding: 0.5, tolerance: 5 }),
+    zoomSnap: 0.25,
+    zoomDelta: 0.5,
+    wheelPxPerZoomLevel: 90,
+    minZoom: 5.5,
+    maxZoom: MAX_ZOOM,
+    maxBounds: regionBounds.pad(0.6),
+    maxBoundsViscosity: 0.8
+  });
+  function fitRegion() { map.fitBounds(regionBounds, { padding: [16, 16] }); }
+  fitRegion();
+
   // O tema (claro/escuro) do mapa vem do filtro CSS --tile-filter.
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 14,
+    maxZoom: MAX_ZOOM,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
+
+  var ResetControl = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd: function () {
+      var bar = L.DomUtil.create("div", "leaflet-bar");
+      var btn = L.DomUtil.create("a", "reset-view", bar);
+      btn.href = "#";
+      btn.title = "Ver a região inteira";
+      btn.setAttribute("role", "button");
+      btn.setAttribute("aria-label", "Ver a região inteira");
+      btn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+      L.DomEvent.on(btn, "click", function (e) { L.DomEvent.preventDefault(e); fitRegion(); });
+      L.DomEvent.disableClickPropagation(bar);
+      return bar;
+    }
+  });
+  map.addControl(new ResetControl());
+
+  // Os pontos crescem ao aproximar e encolhem na visão geral, para não virarem uma mancha.
+  function zoomScale() {
+    return Math.min(2.2, Math.max(0.55, Math.pow(1.35, map.getZoom() - 7.5)));
+  }
+  function fireRadius(frp) {
+    var base = frp ? Math.min(7, 2.5 + Math.sqrt(frp) / 4) : 3;
+    return Math.max(1.5, base * zoomScale());
+  }
+  map.on("zoomend", function () {
+    fireLayer.eachLayer(function (layer) { layer.setRadius(fireRadius(layer.options.frp)); });
+  });
 
   var fireLayer = L.layerGroup().addTo(map);
   var ringLayer = L.layerGroup().addTo(map);
@@ -407,19 +460,20 @@
     focos.forEach(function (f) {
       var ageH = (state.nowMin - f[2]) / 60;
       var muni = state.data.municipios[f[3]];
-      var radius = f[4] ? Math.min(7, 2.5 + Math.sqrt(f[4]) / 4) : 3;
       L.circleMarker([f[0], f[1]], {
-        radius: radius,
+        radius: fireRadius(f[4]),
+        frp: f[4],
         stroke: false,
         fillColor: ageColor(ageH),
         fillOpacity: ageH < 6 ? 0.9 : ageH < 48 ? 0.7 : 0.45
-      }).bindPopup(
-        "<strong>" + muni.nome + "</strong><br>" +
-        "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
-        "Satélite " + state.data.satelites[f[5]] + "<br>" +
-        (f[4] ? "Potência radiativa: " + fmtInt.format(f[4]) + " MW<br>" : "") +
-        Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus"
-      ).addTo(fireLayer);
+      }).bindPopup(function () {
+        // montado só quando o ponto é clicado, e não para os milhares de pontos de uma vez
+        return "<strong>" + muni.nome + "</strong><br>" +
+          "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
+          "Satélite " + state.data.satelites[f[5]] + "<br>" +
+          (f[4] ? "Potência radiativa: " + fmtInt.format(f[4]) + " MW<br>" : "") +
+          Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus";
+      }).addTo(fireLayer);
     });
   }
 
@@ -473,7 +527,9 @@
         '<span class="muni-meta">' + meta.join(" · ") + "</span>";
       btn.querySelector(".muni-name").textContent = m.nome + (m.estado !== "Amazonas" ? " (" + m.estado + ")" : "");
       btn.addEventListener("click", function () {
-        map.fitBounds(s.bounds.pad(0.4), { maxZoom: 10 });
+        var target = s.bounds.pad(0.3);
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) map.fitBounds(target, { maxZoom: 11 });
+        else map.flyToBounds(target, { maxZoom: 11, duration: 0.6 });
         if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
       });
       li.appendChild(btn);
