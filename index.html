@@ -530,7 +530,7 @@
       <button type="button" id="win-48" data-hours="48" aria-pressed="false">48h</button>
       <button type="button" id="win-120" data-hours="120" aria-pressed="false" hidden>5 dias</button>
     </div>
-    <details class="layers collapsible" id="layers-box" open>
+    <details class="layers collapsible" id="layers-box">
       <summary>Camadas</summary>
       <div class="layers-body">
       <label class="check" for="opt-fires"><input type="checkbox" id="opt-fires" checked> Focos de incêndio</label>
@@ -555,12 +555,12 @@
     </details>
     <div class="map-info">
       <button type="button" class="alert-chip" id="alert-chip" hidden></button>
-      <details class="map-forecast collapsible" id="map-fc" open hidden>
+      <details class="map-forecast collapsible" id="map-fc" hidden>
         <summary>Previsão</summary>
         <ol class="map-fc-body" id="map-fc-body"></ol>
       </details>
     </div>
-    <details class="legend collapsible" id="legend-box" open>
+    <details class="legend collapsible" id="legend-box">
       <summary>Legenda</summary>
       <div class="legend-body">
       <span class="legend-fires" id="legend-fires">
@@ -2185,11 +2185,22 @@
       });
     });
   }
-  // no celular, camadas e legenda começam recolhidas para não cobrir o mapa
-  if (window.matchMedia("(max-width: 860px)").matches) {
-    document.getElementById("layers-box").open = false;
-    document.getElementById("legend-box").open = false;
-    document.getElementById("map-fc").open = false;
+  // No computador, cada painel volta como a pessoa deixou (guardado só neste navegador);
+  // na primeira visita, todos começam fechados. No celular, sempre começam fechados.
+  var PANEL_IDS = ["layers-box", "legend-box", "map-fc"];
+  if (!MOBILE) {
+    var savedPanels = {};
+    try { savedPanels = JSON.parse(localStorage.getItem("radar-paineis") || "{}"); } catch (e) {}
+    PANEL_IDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      el.open = savedPanels[id] === true;
+      el.addEventListener("toggle", function () {
+        savedPanels[id] = el.open;
+        try { localStorage.setItem("radar-paineis", JSON.stringify(savedPanels)); } catch (e) {}
+      });
+    });
+  }
+  if (MOBILE) {
     // o crédito do mapa fica recolhido no (i), sem cobrir o botão da legenda
     map.once("load", function () {
       var attrib = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
