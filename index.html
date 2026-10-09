@@ -445,8 +445,6 @@
   .sum-notes { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; font-size: 14px; color: var(--muted); }
   .sum-notes strong { color: var(--ink); font-weight: 600; }
   .sum-notes .fine { font-size: 12px; }
-  .years { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-  .years-title { margin: 0 0 8px; font: 600 11px/1 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .years-lead { margin: 0; font-size: 15px; line-height: 1.45; }
   .years-lead strong { font-weight: 600; }
   #years-chart svg { display: block; width: 100%; height: auto; margin-top: 12px; }
@@ -764,12 +762,13 @@
       <dl class="sum-stats" id="sum-stats"></dl>
       <div id="sum-chart"></div>
       <ul class="sum-notes" id="sum-notes"></ul>
-      <div class="years" id="sum-years" hidden>
-        <h3 class="years-title">Comparado com outros anos</h3>
-        <p class="years-lead" id="years-lead"></p>
-        <div id="years-chart"></div>
-        <p class="years-note" id="years-note"></p>
-      </div>
+    </section>
+
+    <section id="sum-years" aria-labelledby="years-title" hidden>
+      <h2 id="years-title">Comparado com outros anos</h2>
+      <p class="years-lead" id="years-lead"></p>
+      <div id="years-chart"></div>
+      <p class="years-note" id="years-note"></p>
     </section>
 
     <section aria-labelledby="fc-title">
