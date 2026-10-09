@@ -350,7 +350,7 @@
   .near-result .fine { font-size: 12px; color: var(--muted); }
   .near-result strong { font-weight: 600; }
   .you-marker { width: 16px; height: 16px; border-radius: 50%; background: #1c7ed6; border: 3px solid #fff; box-shadow: 0 0 0 2px rgb(28 126 214 / 0.35), 0 1px 4px rgb(0 0 0 / 0.3); }
-  .sensor-pop .val { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 700; margin: 2px 0; }
+
   .overlay-bar { height: 8px; border-radius: 4px; }
   .overlay-ticks { display: flex; justify-content: space-between; gap: 4px; color: var(--muted); font: 11px/1.2 var(--font-data); }
   .overlay-note { color: var(--muted); font-size: 11px; line-height: 1.4; }
@@ -503,16 +503,33 @@
   .maplibregl-ctrl-group button:focus-visible { outline: 2px solid var(--ember); outline-offset: -2px; box-shadow: none; }
   .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter); }
   .reset-view { display: flex; align-items: center; justify-content: center; }
-  .maplibregl-popup-content {
-    background: var(--surface);
-    color: var(--ink);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 10px 28px 10px 12px;
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  .info-card {
+    position: absolute; z-index: 600; top: 12px; left: 60px; width: 300px; max-width: calc(100% - 72px);
+    padding: 14px 16px 14px; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
   }
-  .maplibregl-popup-tip { display: none; }
-  .maplibregl-popup-close-button { color: var(--muted); font-size: 18px; width: 26px; height: 26px; }
+  .info-close {
+    position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; display: grid; place-items: center;
+    border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .info-close:hover { background: var(--ground); color: var(--ink); }
+  .info-close:focus-visible { outline: 2px solid var(--ember); outline-offset: 1px; }
+  .info-kicker { display: flex; align-items: center; gap: 6px; margin: 0 28px 6px 0; font: 600 10px/1.2 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .info-kicker i { width: 8px; height: 8px; border-radius: 50%; background: var(--k, var(--muted)); flex: none; }
+  .info-title { margin: 0 28px 2px 0; font: 600 18px/1.25 var(--font-body); text-wrap: balance; }
+  .info-sub { margin: 0; font-size: 13px; color: var(--muted); }
+  .info-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 12px 0 0; }
+  .info-value b { font: 700 40px/0.95 var(--font-display); font-variant-numeric: tabular-nums; }
+  .info-value small { font: 13px/1.2 var(--font-data); color: var(--muted); }
+  .info-chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font: 700 12px/1.3 var(--font-body); }
+  .info-ratio { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  .info-ratio strong { color: var(--ink); }
+  .info-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+  .info-facts div { display: grid; gap: 1px; min-width: 0; }
+  .info-facts dt { font-size: 11px; color: var(--muted); }
+  .info-facts dd { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .info-note { margin: 12px 0 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+  .sel-ring { width: 30px; height: 30px; border-radius: 50%; border: 2.5px solid var(--ink); box-shadow: 0 0 0 3px var(--surface); pointer-events: none; }
   .maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib.maplibregl-compact {
     background: color-mix(in srgb, var(--surface) 85%, transparent);
     color: var(--muted);
@@ -589,6 +606,11 @@
     .maplibregl-ctrl-attrib.maplibregl-compact-show { max-width: calc(100vw - 190px); }
     .map-wrap:has(.maplibregl-compact-show) .map-info { display: none; }
     .map-info { right: 8px; bottom: 46px; max-width: 62%; }
+    .info-card {
+      top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none; max-height: 70%; overflow-y: auto;
+      border-radius: 14px 14px 0 0; border-bottom: 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+      box-shadow: 0 -6px 24px rgb(0 0 0 / 0.2);
+    }
     .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .alert-chip::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
     .map-forecast { padding: 6px 10px; }
@@ -665,6 +687,12 @@
         <p class="layers-note" id="layers-note" role="status" hidden></p>
       </div>
     </details>
+    <aside class="info-card" id="info-card" aria-label="Detalhes do ponto selecionado" hidden>
+      <button type="button" class="info-close" id="info-close" aria-label="Fechar detalhes">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div id="info-body" aria-live="polite"></div>
+    </aside>
     <div class="map-info">
       <button type="button" class="alert-chip" id="alert-chip" hidden></button>
       <details class="map-forecast collapsible" id="map-fc" hidden>
@@ -1540,17 +1568,34 @@
     if (x.bairro && x.cidade) return x.bairro + ", " + x.cidade;
     return x.bairro || x.cidade || "";
   }
+  function agoText(ms) {
+    var min = Math.max(0, (Date.now() - ms) / 60000);
+    if (min < 60) return "há " + Math.max(1, Math.round(min)) + " min";
+    if (min < 48 * 60) return "há " + Math.round(min / 60) + " h";
+    return "há " + Math.round(min / 1440) + " dias";
+  }
+  function chip(color, dark, text) {
+    return '<span class="info-chip" style="background:' + color + ";color:" + (dark ? "#fff" : "#1b2220") + '">' + text + "</span>";
+  }
+  function fact(label, value) { return "<div><dt>" + label + "</dt><dd>" + value + "</dd></div>"; }
+
   function sensorPopup(x) {
-    var b = bandOf(x.pm25), city = cidades.length ? nearestCity(x.lon, x.lat) : null, place = sensorPlace(x);
-    var km = Math.round(distanceKm(MANAUS[0], MANAUS[1], x.lat, x.lon));
-    return '<div class="sensor-pop"><strong>' + (place || x.nome) + "</strong>" +
-      "<br>Sensor " + x.nome + " · " + x.rede +
-      (x.cidade === "Manaus" ? "<br>" + km + " km do centro de Manaus" : city && !place ? "<br>perto de " + city.nome + ", " + km + " km de Manaus" : "<br>" + km + " km de Manaus") +
-      '<br><span class="val" style="background:' + b[1] + ";color:" + (x.pm25 >= 55.5 ? "#fff" : "#1b2220") + '">' + x.pm25.toFixed(0) + " µg/m³ · " + b[2] + "</span>" +
-      "<br>" + (x.pm25 / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência diária da OMS" +
-      "<br>Leitura bruta do sensor: " + x.bruto.toFixed(0) + " µg/m³ · umidade " + x.umidade + "%" +
-      "<br>Medido em " + fmtTime.format(new Date(x.visto_em)) +
-      '<br><span style="color: var(--muted)">Sensor de baixo custo (PurpleAir), corrigido pela fórmula da EPA para fumaça</span></div>';
+    var b = bandOf(x.pm25), place = sensorPlace(x), city = cidades.length ? nearestCity(x.lon, x.lat) : null;
+    var km = distanceKm(MANAUS[0], MANAUS[1], x.lat, x.lon), visto = Date.parse(x.visto_em);
+    var onde = x.cidade === "Manaus" ? fmtInt.format(Math.round(km)) + " km do centro de Manaus"
+      : (place ? "" : city ? "perto de " + city.nome + ", " : "") + fmtInt.format(Math.round(km)) + " km de Manaus";
+    return '<p class="info-kicker" style="--k:' + b[1] + '"><i></i>Sensor de qualidade do ar</p>' +
+      '<p class="info-title">' + (place || x.nome) + "</p>" +
+      '<p class="info-sub">' + x.nome + " · " + x.rede + "</p>" +
+      '<p class="info-value"><b>' + x.pm25.toFixed(0) + "</b><small>µg/m³<br>PM2.5</small>" + chip(b[1], x.pm25 >= 55.5, b[2]) + "</p>" +
+      '<p class="info-ratio"><strong>' + (x.pm25 / OMS_PM25).toFixed(1).replace(".", ",") + "×</strong> a referência diária da OMS (15 µg/m³)</p>" +
+      '<dl class="info-facts">' +
+        fact("Medido", agoText(visto) + " · " + hhmm(localMinOfDay(visto / 60000))) +
+        fact("Distância", onde) +
+        fact("Leitura bruta", x.bruto.toFixed(0) + " µg/m³") +
+        fact("Umidade", x.umidade + "%") +
+      "</dl>" +
+      '<p class="info-note">Sensor de baixo custo (PurpleAir). O valor passa pela correção da EPA para fumaça, que usa a leitura bruta e a umidade.</p>';
   }
   function drawSensors() {
     if (!state.sensors) return;
@@ -1561,16 +1606,48 @@
   }
 
   function popupHtml(f) {
-    var muni = state.data.municipios[f[3]];
-    return "<strong>" + muni.nome + "</strong><br>" +
-      "Detectado em " + fmtTime.format(new Date(f[2] * 60000)) + " (hora de Manaus)<br>" +
-      "Satélite " + state.data.satelites[f[5]] + "<br>" +
-      (f[4] ? "Potência radiativa: " + fmtInt.format(f[4]) + " MW<br>" : "") +
-      Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus";
+    var muni = state.data.municipios[f[3]], ms = f[2] * 60000, km = distanceKm(MANAUS[0], MANAUS[1], f[0], f[1]);
+    var idadeH = (Date.now() - ms) / 3600000, cor = css(idadeH < 6 ? "--fire-new" : idadeH < 24 ? "--fire-day" : idadeH < 48 ? "--fire-old" : "--fire-older");
+    return '<p class="info-kicker" style="--k:' + cor + '"><i></i>Foco de incêndio</p>' +
+      '<p class="info-title">' + muni.nome + "</p>" +
+      '<p class="info-sub">Detectado ' + agoText(ms) + ", em " + fmtTime.format(new Date(ms)) + "</p>" +
+      '<dl class="info-facts">' +
+        fact("Distância de Manaus", fmtInt.format(Math.round(km)) + " km a " + SECTOR_NAMES[sectorOf(bearing(MANAUS[0], MANAUS[1], f[0], f[1]))]) +
+        fact("Satélite", state.data.satelites[f[5]]) +
+        (f[4] ? fact("Intensidade do fogo", fmtInt.format(f[4]) + " MW") : "") +
+        (muni.dias_sem_chuva != null ? fact("Dias sem chuva", muni.dias_sem_chuva) : "") +
+      "</dl>" +
+      '<p class="info-note">Detecção por satélite (NASA FIRMS): o mesmo fogo pode ser visto por mais de um satélite. Em caso de incêndio, ligue 193.</p>';
   }
 
+  // ---------- cartão de detalhes (no lugar do balão sobre o mapa) ----------
+  var infoCard = document.getElementById("info-card"), infoBody = document.getElementById("info-body"), selMarker = null;
+  function showInfo(lngLat, html) {
+    infoBody.innerHTML = html;
+    infoCard.hidden = false;
+    infoCard.scrollTop = 0;
+    if (!selMarker) {
+      var el = document.createElement("div");
+      el.className = "sel-ring";
+      selMarker = new maplibregl.Marker({ element: el });
+    }
+    selMarker.setLngLat(lngLat).addTo(map);
+    // no celular o cartão cobre a parte de baixo: o ponto sobe para a área livre
+    if (MOBILE) {
+      var pt = map.project(lngLat), h = map.getContainer().clientHeight, free = h - infoCard.offsetHeight;
+      if (pt.y > free - 40) map.easeTo({ center: lngLat, offset: [0, -(h - free / 2) + h / 2], duration: reducedMotion() ? 0 : 400 });
+    }
+  }
+  function hideInfo() {
+    infoCard.hidden = true;
+    if (selMarker) selMarker.remove();
+  }
+  document.getElementById("info-close").addEventListener("click", hideInfo);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !infoCard.hidden) hideInfo(); });
+  // quem ainda chama "popup" (lista de incêndios, aviso do mapa, focos desligados) usa o cartão
+  var popup = { remove: hideInfo };
+
   // clique com folga de alguns pixels, para acertar pontos pequenos com o dedo
-  var popup = new maplibregl.Popup({ maxWidth: "280px", focusAfterOpen: false });
   map.on("click", function (e) {
     var p = e.point, slack = 8;
     if (prefs.sensors && map.getLayer("sensor-points")) {
@@ -1583,7 +1660,7 @@
           });
         } else {
           var sn = state.sensors.sensores[h.properties.i];
-          popup.setLngLat([sn.lon, sn.lat]).setHTML(sensorPopup(sn)).addTo(map);
+          showInfo([sn.lon, sn.lat], sensorPopup(sn));
         }
         return;
       }
@@ -1594,15 +1671,21 @@
     if (!hits.length) {
       // sem foco no lugar: mostra o valor estimado da camada de cor, se houver
       var sc = SCALES[prefs.overlay], v = sc && sampleGrid(sc.field, e.lngLat.lng, e.lngLat.lat);
-      if (v == null) return;
-      var extra = "";
+      // clique num lugar vazio, sem camada de cor: fecha o cartão
+      if (v == null) { hideInfo(); return; }
+      var cor = colorAt(sc.stops, v), html = '<p class="info-kicker" style="--k:rgb(' + cor.map(Math.round).join(",") + ')"><i></i>Estimativa do modelo</p>' +
+        '<p class="info-title">' + sc.title + "</p>" +
+        '<p class="info-sub">Neste ponto do mapa' + (cidades.length ? ", perto de " + nearestCity(e.lngLat.lng, e.lngLat.lat).nome : "") + "</p>";
       if (prefs.overlay === "ar") {
-        var pm = sampleGrid("pm25", e.lngLat.lng, e.lngLat.lat);
-        if (pm != null) extra = "<br>PM2.5 agora: " + pm.toFixed(0) + " µg/m³ (" + (pm / OMS_PM25).toFixed(1).replace(".", ",") + "× o limite da OMS)" +
-          '<br><span style="color: var(--muted)">O AQI usa a média de 24 h e outros poluentes, por isso pode não acompanhar o PM2.5 da hora</span>';
+        var info = aqiInfo(v), pm = sampleGrid("pm25", e.lngLat.lng, e.lngLat.lat);
+        html += '<p class="info-value"><b>' + Math.round(v) + "</b><small>AQI</small>" + chip(css(info[2]), v > 150, info[1].toLowerCase()) + "</p>" +
+          (pm != null ? '<dl class="info-facts">' + fact("PM2.5 agora", pm.toFixed(0) + " µg/m³") + fact("Referência da OMS", (pm / OMS_PM25).toFixed(1).replace(".", ",") + "×") + "</dl>" : "") +
+          '<p class="info-note">O AQI usa a média de 24 h e outros poluentes, por isso pode não acompanhar o PM2.5 da hora. Modelo numa grade de ~85 km: não é medição local; os sensores medem mais.</p>';
+      } else {
+        html += '<p class="info-value"><b>' + v.toFixed(0) + "</b><small>°C<br>a 2 m do chão</small></p>" +
+          '<p class="info-note">Modelo numa grade de ~85 km, não medição local.</p>';
       }
-      popup.setLngLat(e.lngLat).setHTML("<strong>" + sc.title + "</strong><br>Estimativa aqui: " + sc.unit(v) + extra +
-        '<br><span style="color: var(--muted)">Modelo numa grade de ~85 km, não medição local</span>').addTo(map);
+      showInfo([e.lngLat.lng, e.lngLat.lat], html);
       return;
     }
     var best = hits[0], bestD = Infinity;
@@ -1611,7 +1694,7 @@
       if (d < bestD) { best = h; bestD = d; }
     });
     var f = shownFocos[best.properties.i];
-    popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
+    showInfo([f[1], f[0]], popupHtml(f));
   });
   ["sensor-points", "sensor-clusters"].forEach(function (id) {
     map.on("mouseenter", id, function () { map.getCanvas().style.cursor = "pointer"; });
@@ -1816,7 +1899,16 @@
     };
     if (model.length > 1) out.push('<path d="' + path(model) + '" fill="none" stroke="' + muted + '" stroke-width="1.3" stroke-dasharray="3 3"/>');
     if (pts.length > 1) {
-      out.push('<path d="' + path(pts) + "L" + x(pts[pts.length - 1].t).toFixed(1) + "," + y(0) + "L" + x(pts[0].t).toFixed(1) + "," + y(0) + 'Z" fill="' + ember + '" fill-opacity="0.12"/>');
+      // área sombreada por trecho contínuo: ligar os dois lados de um buraco no histórico desenhava uma faixa diagonal
+      var trechos = [[pts[0]]];
+      for (var k = 1; k < pts.length; k++) {
+        if (pts[k].t - pts[k - 1].t > 3 * 3600000) trechos.push([]);
+        trechos[trechos.length - 1].push(pts[k]);
+      }
+      trechos.forEach(function (tr) {
+        if (tr.length < 2) return;
+        out.push('<path d="' + path(tr) + "L" + x(tr[tr.length - 1].t).toFixed(1) + "," + y(0) + "L" + x(tr[0].t).toFixed(1) + "," + y(0) + 'Z" fill="' + ember + '" fill-opacity="0.12"/>');
+      });
       out.push('<path d="' + path(pts) + '" fill="none" stroke="' + ember + '" stroke-width="1.8" stroke-linejoin="round"/>');
       var last = pts[pts.length - 1], peak = pts.reduce(function (a, b) { return b.v > a.v ? b : a; });
       out.push('<circle cx="' + x(last.t).toFixed(1) + '" cy="' + y(last.v).toFixed(1) + '" r="3.5" fill="' + ember + '"/>');
@@ -2094,7 +2186,7 @@
       btn.addEventListener("click", function () {
         if (!prefs.fires) { prefs.fires = true; savePrefs(); applyLayers(); }
         map.flyTo({ center: [f[1], f[0]], zoom: 11, duration: reducedMotion() ? 0 : 900 });
-        popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
+        showInfo([f[1], f[0]], popupHtml(f));
         if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
       });
       li.appendChild(btn);
@@ -2146,7 +2238,7 @@
       if (!prefs.fires) { prefs.fires = true; savePrefs(); applyLayers(); }
       if (level === "ok") { fitRegion(); return; }
       map.flyTo({ center: [near.f[1], near.f[0]], zoom: 11, duration: reducedMotion() ? 0 : 900 });
-      popup.setLngLat([near.f[1], near.f[0]]).setHTML(popupHtml(near.f)).addTo(map);
+      showInfo([near.f[1], near.f[0]], popupHtml(near.f));
     };
   }
 
