@@ -9,7 +9,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css">
 <style>
   :root {
     color-scheme: light;
@@ -23,6 +24,7 @@
     --fire-day: #e8590c;
     --fire-old: #f0a83c;
     --fire-older: #9a8f7a;
+    --ctrl-icon-filter: none;
     --ring: #1b2220;
     --aqi-good: #2f9e44;
     --aqi-moderate: #c99700;
@@ -47,6 +49,7 @@
       --fire-day: #ff922b;
       --fire-old: #ffd08a;
       --fire-older: #8a8270;
+      --ctrl-icon-filter: invert(1);
       --ring: #e7ebe8;
       --aqi-good: #51cf66;
       --aqi-moderate: #fcc419;
@@ -68,6 +71,7 @@
     --fire-day: #ff922b;
     --fire-old: #ffd08a;
     --fire-older: #8a8270;
+    --ctrl-icon-filter: invert(1);
     --ring: #e7ebe8;
     --aqi-good: #51cf66;
     --aqi-moderate: #fcc419;
@@ -230,20 +234,47 @@
   .sources a { color: var(--ink); }
   .error { color: var(--aqi-bad); font-size: 14px; margin: 0; }
 
-  .leaflet-container { font: 13px/1.4 var(--font-body); }
-  .leaflet-bar { border: 1px solid var(--line) !important; border-radius: 6px !important; box-shadow: none !important; overflow: hidden; }
-  .leaflet-bar a, .leaflet-bar a:hover {
-    width: 34px !important; height: 34px !important; line-height: 34px !important;
-    background: var(--surface); color: var(--ink); border-bottom-color: var(--line);
-    display: flex; align-items: center; justify-content: center;
+  .maplibregl-map { font: 13px/1.4 var(--font-body); }
+  .maplibregl-ctrl-group {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: none !important;
+    overflow: hidden;
   }
-  .leaflet-bar a:hover { background: var(--ground); }
-  .leaflet-bar a:focus-visible { outline: 2px solid var(--ember); outline-offset: -2px; }
-  .leaflet-bar a.leaflet-disabled { color: var(--muted); opacity: 0.5; }
-  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink); }
-  .leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 85%, transparent) !important; color: var(--muted); }
-  .leaflet-control-attribution a { color: var(--muted); }
+  .maplibregl-ctrl-group button { width: 34px; height: 34px; color: var(--ink); background: var(--surface); }
+  .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line); }
+  .maplibregl-ctrl-group button:not(:disabled):hover { background: var(--ground); }
+  .maplibregl-ctrl-group button:focus-visible { outline: 2px solid var(--ember); outline-offset: -2px; box-shadow: none; }
+  .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter); }
+  .reset-view { display: flex; align-items: center; justify-content: center; }
+  .maplibregl-popup-content {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 28px 10px 12px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  }
+  .maplibregl-popup-tip { display: none; }
+  .maplibregl-popup-close-button { color: var(--muted); font-size: 18px; width: 26px; height: 26px; }
+  .maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib.maplibregl-compact {
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    color: var(--muted);
+  }
+  .maplibregl-ctrl-attrib a { color: var(--muted); }
+  .map-label {
+    padding: 3px 7px;
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font: 500 13px/1.2 var(--font-body);
+    white-space: nowrap;
+    pointer-events: none;
+  }
   .ring-label {
+    pointer-events: none;
     font: 500 11px/1 var(--font-data);
     color: var(--ink);
     white-space: nowrap;
@@ -329,7 +360,7 @@
   </aside>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script>
 (function () {
   "use strict";
@@ -368,164 +399,142 @@
   function sectorOf(deg) { return Math.floor(((deg + 22.5) % 360) / 45); }
 
   // ---------- mapa ----------
-  var MAX_ZOOM = 15;
-  // Área do raio de 300 km; o mapa abre enquadrado nela e não deixa se afastar muito.
-  var regionBounds = L.latLng(MANAUS).toBounds(2 * 300 * 1000);
-  var map = L.map("map", {
-    zoomSnap: 0.5,
-    zoomDelta: 0.5,
-    wheelPxPerZoomLevel: 90,
-    minZoom: 5.5,
-    maxZoom: MAX_ZOOM,
-    maxBounds: regionBounds.pad(0.6),
-    maxBoundsViscosity: 0.8
-  });
-  function fitRegion() { map.fitBounds(regionBounds, { padding: [16, 16] }); }
-  fitRegion();
+  // MapLibre desenha na placa de vídeo e acompanha o gesto do trackpad de forma contínua.
+  // (O zoom dele é 1 nível abaixo do Leaflet para a mesma escala: tiles de 512 px.)
+  var MAX_ZOOM = 14;
+  var RING_KM = [50, 100, 200, 300];
+  var ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_{tema}_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 
-  // Fundo cinza da Esri, feito para ficar por baixo de dados; versão clara ou escura conforme o tema.
-  var ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_{tema}_Gray_{camada}/MapServer/tile/{z}/{y}/{x}";
-  var tileOptions = {
-    maxZoom: MAX_ZOOM,
-    // só busca as imagens do nível final do zoom, não as de cada passo intermediário
-    updateWhenZooming: false,
-    // guarda mais imagens ao redor da tela, para o arrasto não mostrar áreas vazias
-    keepBuffer: 4
-  };
-  var baseLayers = [];
+  // círculo de raio km ao redor de Manaus, como lista de [lon, lat]
+  function ringCoords(km) {
+    var r = Math.PI / 180, lat0 = MANAUS[0] * r, lon0 = MANAUS[1] * r, d = km / 6371, out = [];
+    for (var i = 0; i <= 96; i++) {
+      var b = i / 96 * 2 * Math.PI;
+      var lat = Math.asin(Math.sin(lat0) * Math.cos(d) + Math.cos(lat0) * Math.sin(d) * Math.cos(b));
+      var lon = lon0 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(lat0), Math.cos(d) - Math.sin(lat0) * Math.sin(lat));
+      out.push([lon / r, lat / r]);
+    }
+    return out;
+  }
+  function boxOf(coords, pad) {
+    var w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    coords.forEach(function (c) { w = Math.min(w, c[0]); e = Math.max(e, c[0]); s = Math.min(s, c[1]); n = Math.max(n, c[1]); });
+    var px = (e - w) * (pad || 0), py = (n - s) * (pad || 0);
+    return [[w - px, s - py], [e + px, n + py]];
+  }
+  var regionBox = boxOf(ringCoords(300));
+
   function isDark() {
     var t = document.documentElement.getAttribute("data-theme");
     return t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
-  function setBaseLayers() {
-    var tema = isDark() ? "Dark" : "Light";
-    if (baseLayers.length && baseLayers[0].options.tema === tema) return;
-    baseLayers.forEach(function (layer) { map.removeLayer(layer); });
-    baseLayers = [
-      L.tileLayer(ESRI.replace("{tema}", tema).replace("{camada}", "Base"), L.extend({
-        tema: tema,
-        attribution: "&copy; Esri, HERE, Garmin, OpenStreetMap e comunidade GIS"
-      }, tileOptions))
-    ];
-    baseLayers.forEach(function (layer) { layer.addTo(map); });
+  function baseTiles() { return [ESRI.replace("{tema}", isDark() ? "Dark" : "Light")]; }
+
+  var map = new maplibregl.Map({
+    container: "map",
+    style: {
+      version: 8,
+      sources: {
+        base: {
+          type: "raster",
+          tiles: baseTiles(),
+          tileSize: 256,
+          maxzoom: 16,
+          attribution: "&copy; Esri, HERE, Garmin, OpenStreetMap e comunidade GIS"
+        }
+      },
+      layers: [{ id: "base", type: "raster", source: "base" }]
+    },
+    bounds: regionBox,
+    fitBoundsOptions: { padding: 16 },
+    minZoom: 4.5,
+    maxZoom: MAX_ZOOM,
+    maxBounds: boxOf(ringCoords(300), 0.6),
+    dragRotate: false,
+    pitchWithRotate: false,
+    touchPitch: false,
+    attributionControl: { compact: true }
+  });
+  map.touchZoomRotate.disableRotation();
+  map.keyboard.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
+
+  function reducedMotion() { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+  function fitRegion() { map.fitBounds(regionBox, { padding: 16, duration: reducedMotion() ? 0 : 600 }); }
+
+  function ResetControl() {}
+  ResetControl.prototype.onAdd = function () {
+    var bar = document.createElement("div");
+    bar.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "reset-view";
+    btn.title = "Ver a região inteira";
+    btn.setAttribute("aria-label", "Ver a região inteira");
+    btn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+    btn.addEventListener("click", fitRegion);
+    bar.appendChild(btn);
+    this._bar = bar;
+    return bar;
+  };
+  ResetControl.prototype.onRemove = function () { this._bar.remove(); };
+  map.addControl(new ResetControl(), "top-left");
+
+  // rótulos em HTML (o fundo é só imagem, sem fontes para texto no mapa)
+  function htmlMarker(className, text, lngLat, anchor, offset) {
+    var el = document.createElement("div");
+    el.className = className;
+    el.textContent = text;
+    return new maplibregl.Marker({ element: el, anchor: anchor, offset: offset || [0, 0] }).setLngLat(lngLat).addTo(map);
   }
-  setBaseLayers();
+  RING_KM.forEach(function (km) { htmlMarker("ring-label", km + " km", [MANAUS[1], MANAUS[0] + km / 111.2], "bottom", [0, -2]); });
+  htmlMarker("map-label", "Manaus", [MANAUS[1], MANAUS[0]], "left", [12, 0]);
 
-  var ResetControl = L.Control.extend({
-    options: { position: "topleft" },
-    onAdd: function () {
-      var bar = L.DomUtil.create("div", "leaflet-bar");
-      var btn = L.DomUtil.create("a", "reset-view", bar);
-      btn.href = "#";
-      btn.title = "Ver a região inteira";
-      btn.setAttribute("role", "button");
-      btn.setAttribute("aria-label", "Ver a região inteira");
-      btn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-      L.DomEvent.on(btn, "click", function (e) { L.DomEvent.preventDefault(e); fitRegion(); });
-      L.DomEvent.disableClickPropagation(bar);
-      return bar;
-    }
-  });
-  map.addControl(new ResetControl());
-
-  // Todos os focos numa única camada de pixels: com milhares de pontos, um objeto
-  // do Leaflet por foco deixa o zoom e a troca de período lentos.
-  var FireCanvas = L.Layer.extend({
-    onAdd: function (m) {
-      this._canvas = L.DomUtil.create("canvas", "leaflet-zoom-animated");
-      m.getPane("overlayPane").appendChild(this._canvas);
-      this._points = [];
-      this._screen = new Float32Array(0);
-      m.on("moveend resize", this._reset, this);
-      m.on("zoomanim", this._animateZoom, this);
-      this._reset();
-    },
-    onRemove: function (m) {
-      L.DomUtil.remove(this._canvas);
-      m.off("moveend resize", this._reset, this);
-      m.off("zoomanim", this._animateZoom, this);
-    },
-    setPoints: function (points) {
-      // posição de cada foco no zoom 0, calculada uma vez; no desenho basta escalar
-      var m = this._map;
-      points.forEach(function (p) { p.p0 = m.project(p.latlng, 0); });
-      this._points = points;
-      if (this._map) this._reset();
-    },
-    _animateZoom: function (e) {
-      // durante a animação só escala a imagem pronta; redesenha no fim (mesma conta do Leaflet)
-      var m = this._map, scale = m.getZoomScale(e.zoom, this._zoom);
-      var half = m.getSize().multiplyBy(0.5 + this._pad);
-      var offset = half.multiplyBy(-scale).add(m.project(this._center, e.zoom)).subtract(m._getNewPixelOrigin(e.center, e.zoom));
-      L.DomUtil.setTransform(this._canvas, offset, scale);
-    },
-    // margem desenhada além da tela, para não aparecer borda vazia ao arrastar
-    _pad: 0.15,
-    _reset: function () {
-      var m = this._map, view = m.getSize(), dpr = Math.min(2, window.devicePixelRatio || 1);
-      var margin = view.multiplyBy(this._pad).round(), size = view.add(margin.multiplyBy(2));
-      var c = this._canvas;
-      this._center = m.getCenter();
-      this._zoom = m.getZoom();
-      c.width = size.x * dpr;
-      c.height = size.y * dpr;
-      c.style.width = size.x + "px";
-      c.style.height = size.y + "px";
-      L.DomUtil.setPosition(c, m.containerPointToLayerPoint(margin.multiplyBy(-1)));
-      this._draw(size, margin, dpr);
-    },
-    _draw: function (size, margin, dpr) {
-      var ctx = this._canvas.getContext("2d");
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, size.x, size.y);
-      ctx.translate(margin.x, margin.y);
-      var scale = Math.min(2.2, Math.max(0.55, Math.pow(1.35, this._map.getZoom() - 7.5)));
-      var m = this._map, k = m.getZoomScale(m.getZoom(), 0);
-      var shift = m._getMapPanePos().subtract(m.getPixelOrigin());
-      var pts = this._points, screen = new Float32Array(pts.length * 3);
-      for (var i = 0; i < pts.length; i++) {
-        var p = pts[i];
-        var xy = { x: p.p0.x * k + shift.x, y: p.p0.y * k + shift.y };
-        var r = Math.max(1.5, p.base * scale);
-        screen[i * 3] = xy.x; screen[i * 3 + 1] = xy.y; screen[i * 3 + 2] = r;
-        if (xy.x < -margin.x - r || xy.y < -margin.y - r || xy.x > size.x - margin.x + r || xy.y > size.y - margin.y + r) continue;
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(xy.x, xy.y, r, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      this._screen = screen;
-    },
-    // foco mais próximo do ponto da tela, com folga de alguns pixels para o dedo
-    pointAt: function (containerPoint, slack) {
-      var s = this._screen, best = -1, bestD = Infinity;
-      for (var i = 0; i < this._points.length; i++) {
-        var dx = s[i * 3] - containerPoint.x, dy = s[i * 3 + 1] - containerPoint.y;
-        var d = Math.sqrt(dx * dx + dy * dy);
-        if (d <= s[i * 3 + 2] + slack && d < bestD) { best = i; bestD = d; }
-      }
-      return best < 0 ? null : this._points[best];
-    }
-  });
-
-  var fireLayer = new FireCanvas().addTo(map);
-  var ringLayer = L.layerGroup().addTo(map);
-  function drawRings() {
-    ringLayer.clearLayers();
-    var ink = css("--ring");
-    [50, 100, 200, 300].forEach(function (km) {
-      L.circle(MANAUS, { radius: km * 1000, color: ink, weight: 1, opacity: 0.35, fill: false, dashArray: "3 5", interactive: false }).addTo(ringLayer);
-      var labelLat = MANAUS[0] + km / 111.2;
-      L.marker([labelLat, MANAUS[1]], {
-        interactive: false,
-        icon: L.divIcon({ className: "ring-label", html: km + " km", iconSize: null, iconAnchor: [14, 8] })
-      }).addTo(ringLayer);
+  var mapReady = new Promise(function (resolve) {
+    map.on("load", function () {
+      map.addSource("rings", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: RING_KM.map(function (km) {
+          return { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: ringCoords(km) } };
+        }) }
+      });
+      map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-width": 1, "line-opacity": 0.35, "line-dasharray": [3, 5] } });
+      map.addSource("fires", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "fires",
+        type: "circle",
+        source: "fires",
+        // focos mais recentes por cima dos antigos
+        layout: { "circle-sort-key": ["-", 3, ["get", "band"]] },
+        paint: {
+          // pontos crescem ao aproximar e encolhem na visão geral
+          "circle-radius": ["interpolate", ["linear"], ["zoom"],
+            5, ["max", 1.5, ["*", ["get", "base"], 0.55]],
+            6.5, ["*", ["get", "base"], 1],
+            9, ["*", ["get", "base"], 1.6],
+            12, ["*", ["get", "base"], 2.2]],
+          "circle-opacity": ["match", ["get", "band"], 0, 0.9, 3, 0.45, 0.7]
+        }
+      });
+      map.addSource("manaus", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [MANAUS[1], MANAUS[0]] } } });
+      map.addLayer({ id: "manaus", type: "circle", source: "manaus", paint: { "circle-radius": 6, "circle-stroke-width": 2 } });
+      resolve();
     });
-    L.circleMarker(MANAUS, { radius: 6, color: ink, weight: 2, fillColor: css("--surface"), fillOpacity: 1 })
-      .bindTooltip("Manaus", { permanent: true, direction: "right", offset: [8, 0] })
-      .addTo(ringLayer);
+  });
+
+  // cores vêm dos tokens do tema
+  function drawRings() {
+    mapReady.then(function () {
+      var ink = css("--ring");
+      map.setPaintProperty("rings", "line-color", ink);
+      map.setPaintProperty("manaus", "circle-color", css("--surface"));
+      map.setPaintProperty("manaus", "circle-stroke-color", ink);
+      map.setPaintProperty("fires", "circle-color", ["match", ["get", "band"],
+        0, css("--fire-new"), 1, css("--fire-day"), 2, css("--fire-old"), css("--fire-older")]);
+    });
+  }
+  function setBaseLayers() {
+    mapReady.then(function () { map.getSource("base").setTiles(baseTiles()); });
   }
 
   function visibleFocos() {
@@ -533,21 +542,22 @@
     return state.data.focos.filter(function (f) { return f[2] >= minMin; });
   }
 
+  var shownFocos = [];
   function drawFires() {
-    // cores lidas do CSS uma vez por desenho, não uma vez por foco
-    var colors = [css("--fire-new"), css("--fire-day"), css("--fire-old"), css("--fire-older")];
-    // os mais antigos primeiro, para os recentes ficarem por cima
-    fireLayer.setPoints(visibleFocos().map(function (f) {
+    shownFocos = visibleFocos();
+    var features = shownFocos.map(function (f, i) {
       var ageH = (state.nowMin - f[2]) / 60;
-      var band = ageH < 6 ? 0 : ageH < 24 ? 1 : ageH < 48 ? 2 : 3;
       return {
-        f: f,
-        latlng: L.latLng(f[0], f[1]),
-        base: f[4] ? Math.min(7, 2.5 + Math.sqrt(f[4]) / 4) : 3,
-        color: colors[band],
-        alpha: band === 0 ? 0.9 : band < 3 ? 0.7 : 0.45
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [f[1], f[0]] },
+        properties: {
+          i: i,
+          band: ageH < 6 ? 0 : ageH < 24 ? 1 : ageH < 48 ? 2 : 3,
+          base: f[4] ? Math.min(7, 2.5 + Math.sqrt(f[4]) / 4) : 3
+        }
       };
-    }));
+    });
+    mapReady.then(function () { map.getSource("fires").setData({ type: "FeatureCollection", features: features }); });
   }
 
   function popupHtml(f) {
@@ -559,21 +569,22 @@
       Math.round(distanceKm(MANAUS[0], MANAUS[1], f[0], f[1])) + " km de Manaus";
   }
 
+  // clique com folga de alguns pixels, para acertar pontos pequenos com o dedo
+  var popup = new maplibregl.Popup({ maxWidth: "280px", focusAfterOpen: false });
   map.on("click", function (e) {
-    var hit = fireLayer.pointAt(e.containerPoint, 6);
-    if (hit) L.popup().setLatLng(hit.latlng).setContent(popupHtml(hit.f)).openOn(map);
-  });
-  // cursor de mão sobre um foco; no máximo uma busca por quadro
-  var hoverQueued = false, lastMove = null;
-  map.on("mousemove", function (e) {
-    lastMove = e.containerPoint;
-    if (hoverQueued) return;
-    hoverQueued = true;
-    requestAnimationFrame(function () {
-      hoverQueued = false;
-      map.getContainer().style.cursor = fireLayer.pointAt(lastMove, 2) ? "pointer" : "";
+    var p = e.point, slack = 8;
+    var hits = map.getLayer("fires") ? map.queryRenderedFeatures([[p.x - slack, p.y - slack], [p.x + slack, p.y + slack]], { layers: ["fires"] }) : [];
+    if (!hits.length) return;
+    var best = hits[0], bestD = Infinity;
+    hits.forEach(function (h) {
+      var q = map.project(h.geometry.coordinates), d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < bestD) { best = h; bestD = d; }
     });
+    var f = shownFocos[best.properties.i];
+    popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
   });
+  map.on("mouseenter", "fires", function () { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "fires", function () { map.getCanvas().style.cursor = ""; });
 
   // ---------- pressão de fumaça por município ----------
   function upwindFactor(fireBearing) {
@@ -591,8 +602,11 @@
       var b = bearing(MANAUS[0], MANAUS[1], f[0], f[1]);
       s.count += 1;
       s.score += Math.exp(-d / 120) * upwindFactor(b);
-      if (!s.bounds) s.bounds = L.latLngBounds([f[0], f[1]], [f[0], f[1]]);
-      else s.bounds.extend([f[0], f[1]]);
+      if (!s.bounds) s.bounds = [[f[1], f[0]], [f[1], f[0]]];
+      else {
+        s.bounds[0][0] = Math.min(s.bounds[0][0], f[1]); s.bounds[0][1] = Math.min(s.bounds[0][1], f[0]);
+        s.bounds[1][0] = Math.max(s.bounds[1][0], f[1]); s.bounds[1][1] = Math.max(s.bounds[1][1], f[0]);
+      }
     });
     var list = stats.filter(function (s) { return s.count > 0; });
     var top = Math.max.apply(null, list.map(function (s) { return s.score; }).concat([1e-9]));
@@ -625,9 +639,7 @@
         '<span class="muni-meta">' + meta.join(" · ") + "</span>";
       btn.querySelector(".muni-name").textContent = m.nome + (m.estado !== "Amazonas" ? " (" + m.estado + ")" : "");
       btn.addEventListener("click", function () {
-        var target = s.bounds.pad(0.3);
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) map.fitBounds(target, { maxZoom: 11 });
-        else map.flyToBounds(target, { maxZoom: 11, duration: 0.6 });
+        map.fitBounds(s.bounds, { padding: 60, maxZoom: 10, duration: reducedMotion() ? 0 : 700 });
         if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
       });
       li.appendChild(btn);
