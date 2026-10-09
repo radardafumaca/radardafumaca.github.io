@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Guardar a grade publicada (reserva se a Open-Meteo falhar)
+        run: curl -sf "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/grade.json" -o data/grade.prev.json || true
       - name: Baixar focos
         run: python scripts/update_data.py
         env:

@@ -12,6 +12,7 @@ import io
 import json
 import math
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = DATA / "focos.json"
 GRADE = DATA / "grade.json"
+# Grade publicada na rodada anterior (a Action baixa do site antes de rodar). Se a
+# Open-Meteo falhar, a parte que faltou vem daqui, desde que tenha menos de 3 h.
+GRADE_ANTERIOR = DATA / "grade.prev.json"
+GRADE_VALIDADE_HORAS = 3
 
 # Vento, temperatura e qualidade do ar numa grade de 8 x 8 pontos sobre a região.
 # Duas consultas (clima e ar) de 64 pontos a cada 30 min dão ~6.100 por dia, abaixo
@@ -242,8 +247,16 @@ def grade():
 
     def consulta(url, variaveis):
         query = urllib.parse.urlencode(dict(coords, current=variaveis))
-        with urllib.request.urlopen(f"{url}?{query}", timeout=120) as response:
-            return [r["current"] for r in json.load(response)]
+        # a Open-Meteo às vezes devolve uma resposta cortada; tenta de novo antes de desistir
+        for tentativa in range(3):
+            try:
+                with urllib.request.urlopen(f"{url}?{query}", timeout=120) as response:
+                    return [r["current"] for r in json.load(response)]
+            except (urllib.error.URLError, TimeoutError, KeyError, ValueError, TypeError) as error:
+                if tentativa == 2:
+                    raise
+                print(f"Open-Meteo falhou ({error}); tentando de novo")
+                time.sleep(5 * (tentativa + 1))
 
     def uv(speed_kmh, direction):
         # direção meteorológica: de onde o vento vem; u para leste, v para norte, em m/s
@@ -273,12 +286,44 @@ def grade():
     except (urllib.error.URLError, TimeoutError, KeyError, ValueError, TypeError) as error:
         print(f"Open-Meteo (qualidade do ar) indisponível: {error}")
 
+    # o que faltou nesta rodada vem da grade anterior, se ainda for recente
+    if "temperatura" not in payload or "aqi" not in payload:
+        anterior = grade_anterior(payload["grade"])
+        partes = [("clima_em", ["superficie", "altitude", "temperatura"]), ("ar_em", ["aqi", "pm25"])]
+        for carimbo, campos in partes:
+            if carimbo not in payload and carimbo in anterior:
+                payload[carimbo] = anterior[carimbo]
+                for campo in campos:
+                    payload[campo] = anterior[campo]
+                print(f"usando {', '.join(campos)} da rodada anterior ({anterior[carimbo]})")
+
     if len(payload) == 1:
         print("Sem dados de grade nesta rodada")
         return
     GRADE.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     partes = [nome for nome in ("temperatura", "aqi") if nome in payload]
     print(f"grade {GRID_SIZE}x{GRID_SIZE} ({', '.join(partes)}, vento) -> {GRADE}")
+
+
+def grade_anterior(grade_atual):
+    """Partes ainda válidas da grade publicada antes (mesma grade, menos de 3 h)."""
+    try:
+        anterior = json.loads(GRADE_ANTERIOR.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if anterior.get("grade") != grade_atual:
+        return {}
+    limite = datetime.now(timezone.utc) - timedelta(hours=GRADE_VALIDADE_HORAS)
+    validas = {}
+    for carimbo, campos in (("clima_em", ["superficie", "altitude", "temperatura"]), ("ar_em", ["aqi", "pm25"])):
+        try:
+            quando = datetime.fromisoformat(anterior[carimbo].replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            continue
+        if quando >= limite and all(c in anterior for c in campos):
+            validas[carimbo] = anterior[carimbo]
+            validas.update({c: anterior[c] for c in campos})
+    return validas
 
 
 def main():

@@ -3,3 +3,4 @@ __pycache__/
 .env
 data/focos.json
 data/grade.json
+data/grade.prev.json

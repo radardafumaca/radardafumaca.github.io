@@ -229,6 +229,7 @@
   }
   .layers-body { display: grid; gap: 8px; justify-items: end; margin-top: 8px; }
   .layers summary { justify-content: flex-end; }
+  .layers-note { margin: 0; max-width: 230px; font-size: 12px; line-height: 1.4; color: var(--muted); text-align: right; }
   .seg { display: flex; gap: 2px; padding: 2px; border-radius: 5px; background: var(--ground); }
   .seg button {
     border: 0;
@@ -478,6 +479,7 @@
         <button type="button" id="level-altitude" data-level="altitude" aria-pressed="false">1,5 km</button>
       </div>
       <label class="check" for="opt-cities"><input type="checkbox" id="opt-cities" checked> Nomes das cidades</label>
+      <p class="layers-note" id="layers-note" role="status" hidden></p>
       </div>
     </details>
     <div class="map-info">
@@ -1768,13 +1770,27 @@
     .then(function (list) { cidades = list; drawCities(); renderSummary(); })
     .catch(function () { document.getElementById("opt-cities").disabled = true; });
   function disableOption(el, why) { el.disabled = true; el.title = why; }
+  // diz na tela o que ficou de fora, em vez de só deixar o controle cinza
+  function noteMissing(nomes) {
+    var note = document.getElementById("layers-note");
+    if (!nomes.length) { note.hidden = true; return; }
+    var lista = nomes.length > 1 ? nomes.slice(0, -1).join(", ") + " e " + nomes[nomes.length - 1] : nomes[0];
+    note.textContent = lista.charAt(0).toUpperCase() + lista.slice(1) + (nomes.length > 1 ? " estão indisponíveis" : " está indisponível") +
+      " nesta atualização (falha na Open-Meteo). Voltam na próxima, em até 30 minutos.";
+    note.hidden = false;
+  }
   fetch("data/grade.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (d) {
       grid = d;
+      var missing = [];
+      if (!d.superficie) missing.push("vento");
+      if (!d.temperatura) missing.push("temperatura");
+      if (!d.aqi) missing.push("qualidade do ar no mapa");
       if (!d.temperatura) disableOption(document.getElementById("overlay-temperatura"), "Temperatura indisponível no momento");
       if (!d.aqi) disableOption(document.getElementById("overlay-ar"), "Qualidade do ar indisponível no momento");
       if (d.superficie) mapReady.then(function () { wind.setData(d); });
       else disableOption(document.getElementById("opt-wind"), "Dados de vento indisponíveis no momento");
+      noteMissing(missing);
       overlay.show(prefs.overlay);
       renderSummary();
     })
@@ -1782,6 +1798,7 @@
       disableOption(document.getElementById("opt-wind"), "Dados de vento indisponíveis no momento");
       disableOption(document.getElementById("overlay-temperatura"), "Temperatura indisponível no momento");
       disableOption(document.getElementById("overlay-ar"), "Qualidade do ar indisponível no momento");
+      noteMissing(["vento", "temperatura", "qualidade do ar no mapa"]);
     });
 
   // Cada dado aparece assim que chega: os focos não esperam a Open-Meteo.
