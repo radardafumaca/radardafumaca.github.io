@@ -82,6 +82,8 @@
   }
 
   * { box-sizing: border-box; }
+  /* elementos com display próprio (grid, flex) também somem com o atributo hidden */
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     margin: 0;
@@ -128,14 +130,36 @@
     left: 12px;
     bottom: 24px;
     z-index: 500;
-    display: grid;
-    gap: 6px;
-    padding: 10px 12px;
+    padding: 8px 12px;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 6px;
     font-size: 12px;
   }
+  .legend-body { display: grid; gap: 6px; margin-top: 8px; }
+  .collapsible summary {
+    list-style: none;
+    cursor: pointer;
+    font: 600 11px/1 var(--font-body);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .collapsible summary::-webkit-details-marker { display: none; }
+  .collapsible summary::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translateY(-2px);
+  }
+  .collapsible[open] summary::after { transform: rotate(-135deg) translateY(-2px); }
+  .collapsible summary:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; border-radius: 2px; }
   .legend-title { font: 600 11px/1 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .legend-row { display: flex; align-items: center; gap: 8px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
@@ -162,6 +186,44 @@
     cursor: pointer;
   }
   .window button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+
+  .layers {
+    position: absolute;
+    top: 56px;
+    right: 12px;
+    z-index: 500;
+    padding: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .layers-body { display: grid; gap: 8px; justify-items: end; margin-top: 8px; }
+  .layers summary { justify-content: flex-end; }
+  .seg { display: flex; gap: 2px; padding: 2px; border-radius: 5px; background: var(--ground); }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: 600 12px/1 var(--font-body);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+  .seg button:focus-visible, .check input:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .check { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); white-space: nowrap; }
+  .check input { accent-color: var(--ember); margin: 0; }
+  .legend-heat, .legend-wind { display: grid; gap: 4px; max-width: 200px; }
+  .heat-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, rgb(253 224 71 / 0.5), rgb(251 146 60 / 0.8), #ea580c, #b91c1c, #7f1d1d);
+  }
+  .heat-ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+  .legend-wind { color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .legend-wind strong { color: var(--ink); font-weight: 600; }
+  #wind-canvas { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
   .window button:focus-visible, .muni:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
 
   .panel {
@@ -263,23 +325,6 @@
     color: var(--muted);
   }
   .maplibregl-ctrl-attrib a { color: var(--muted); }
-  .map-label {
-    padding: 3px 7px;
-    background: var(--surface);
-    color: var(--ink);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    font: 500 13px/1.2 var(--font-body);
-    white-space: nowrap;
-    pointer-events: none;
-  }
-  .ring-label {
-    pointer-events: none;
-    font: 500 11px/1 var(--font-data);
-    color: var(--ink);
-    white-space: nowrap;
-    text-shadow: 0 0 3px var(--ground), 0 0 3px var(--ground);
-  }
 
   @media (max-width: 860px) {
     html, body { height: auto; }
@@ -290,6 +335,9 @@
       grid-template-areas: "top" "map" "panel";
     }
     .map-wrap { min-height: 360px; }
+    .layers { top: 52px; right: 8px; padding: 8px; }
+    .layers-body { gap: 6px; }
+    .legend { left: 8px; bottom: 16px; padding: 8px 10px; }
     .panel { border-left: 0; overflow: visible; }
     .top { padding-inline: 16px; }
     section { padding: 18px 16px; }
@@ -321,13 +369,37 @@
       <button type="button" id="win-48" data-hours="48" aria-pressed="false">48h</button>
       <button type="button" id="win-120" data-hours="120" aria-pressed="false" hidden>5 dias</button>
     </div>
-    <div class="legend" aria-hidden="true">
+    <details class="layers collapsible" id="layers-box" open>
+      <summary>Camadas</summary>
+      <div class="layers-body">
+      <div class="seg" role="group" aria-label="Como mostrar os focos">
+        <button type="button" id="mode-pontos" data-mode="pontos" aria-pressed="true">Pontos</button>
+        <button type="button" id="mode-calor" data-mode="calor" aria-pressed="false">Calor</button>
+      </div>
+      <label class="check" for="opt-wind"><input type="checkbox" id="opt-wind"> Correntes de vento</label>
+      <div class="seg" id="wind-level" role="group" aria-label="Altura do vento" hidden>
+        <button type="button" id="level-superficie" data-level="superficie" aria-pressed="true">Solo</button>
+        <button type="button" id="level-altitude" data-level="altitude" aria-pressed="false">1,5 km</button>
+      </div>
+      <label class="check" for="opt-cities"><input type="checkbox" id="opt-cities" checked> Nomes das cidades</label>
+      </div>
+    </details>
+    <details class="legend collapsible" id="legend-box" open>
+      <summary>Legenda</summary>
+      <div class="legend-body">
       <span class="legend-title">Foco detectado há</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-new)"></span>menos de 6 h</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-day)"></span>6 a 24 h</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-old)"></span>24 a 48 h</span>
       <span class="legend-row" id="legend-older" hidden><span class="dot" style="background: var(--fire-older)"></span>2 a 5 dias</span>
-    </div>
+      <span class="legend-heat" id="legend-heat" hidden>
+        <span class="legend-title">Concentração de focos</span>
+        <span class="heat-bar"></span>
+        <span class="heat-ends"><span>menor</span><span>maior</span></span>
+      </span>
+      <span class="legend-wind" id="legend-wind" hidden></span>
+      </div>
+    </details>
   </div>
 
   <aside class="panel">
@@ -354,6 +426,8 @@
       <h2 id="src-title">Fontes e limites</h2>
       <p><strong>Focos de calor:</strong> <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener">NASA FIRMS</a>, com os satélites Suomi NPP, NOAA-20 e NOAA-21 (sensor VIIRS, resolução de 375 m) e Terra e Aqua (sensor MODIS, 1 km). Detecções de baixa confiança ficam de fora. Cada ponto é uma detecção: vários satélites passam pelo mesmo lugar, então um incêndio pode aparecer mais de uma vez. Use os números para comparar áreas e dias, não como contagem de incêndios.</p>
       <p><strong>Municípios:</strong> limites do <a href="https://www.ibge.gov.br/geociencias/organizacao-do-territorio/malhas-territoriais.html" target="_blank" rel="noopener">IBGE</a>. Focos sobre rios largos entram no município mais próximo.</p>
+      <p><strong>Correntes de vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, numa grade de 10 × 10 pontos sobre a região, atualizada a cada 30 minutos. "Solo" é o vento a 10 m; "1,5 km" é o vento a 850 hPa, altura em que a fumaça costuma viajar.</p>
+      <p><strong>Cidades:</strong> sedes dos municípios do <a href="https://github.com/kelvins/municipios-brasileiros" target="_blank" rel="noopener">kelvins/municipios-brasileiros</a>; letras do mapa do <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
       <p><strong>Qualidade do ar e vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (modelo CAMS, do Copernicus). O PM2.5 é estimado por modelo numa grade de cerca de 40 km, não medido por sensor em cada bairro.</p>
       <p><strong>Dias sem chuva e risco de fogo:</strong> <a href="https://terrabrasilis.dpi.inpe.br/queimadas/portal/" target="_blank" rel="noopener">INPE – Programa Queimadas</a>, calculados nos focos que o INPE detectou em cada município. O risco vai de 0 a 1; acima de 0,7 é considerado alto ou crítico.</p>
     </section>
@@ -434,6 +508,8 @@
     container: "map",
     style: {
       version: 8,
+      // letras para os nomes das cidades (OpenFreeMap, sem chave)
+      glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
       sources: {
         base: {
           type: "raster",
@@ -480,15 +556,6 @@
   ResetControl.prototype.onRemove = function () { this._bar.remove(); };
   map.addControl(new ResetControl(), "top-left");
 
-  // rótulos em HTML (o fundo é só imagem, sem fontes para texto no mapa)
-  function htmlMarker(className, text, lngLat, anchor, offset) {
-    var el = document.createElement("div");
-    el.className = className;
-    el.textContent = text;
-    return new maplibregl.Marker({ element: el, anchor: anchor, offset: offset || [0, 0] }).setLngLat(lngLat).addTo(map);
-  }
-  RING_KM.forEach(function (km) { htmlMarker("ring-label", km + " km", [MANAUS[1], MANAUS[0] + km / 111.2], "bottom", [0, -2]); });
-  htmlMarker("map-label", "Manaus", [MANAUS[1], MANAUS[0]], "left", [12, 0]);
 
   var mapReady = new Promise(function (resolve) {
     map.on("load", function () {
@@ -499,6 +566,12 @@
         }) }
       });
       map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-width": 1, "line-opacity": 0.35, "line-dasharray": [3, 5] } });
+      map.addSource("ring-labels", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: RING_KM.map(function (km) {
+          return { type: "Feature", properties: { label: km + " km" }, geometry: { type: "Point", coordinates: [MANAUS[1], MANAUS[0] + km / 111.2] } };
+        }) }
+      });
       map.addSource("fires", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({
         id: "fires",
@@ -516,8 +589,73 @@
           "circle-opacity": ["match", ["get", "band"], 0, 0.9, 3, 0.45, 0.7]
         }
       });
+      // mapa de calor: densidade dos focos, pesada pela potência do fogo
+      map.addLayer({
+        id: "heat",
+        type: "heatmap",
+        source: "fires",
+        layout: { visibility: "none" },
+        paint: {
+          "heatmap-weight": ["interpolate", ["linear"], ["get", "frp"], 0, 0.35, 20, 0.7, 100, 1],
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 9, 1.8],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 8, 7, 16, 10, 32],
+          "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"],
+            0, "rgba(0,0,0,0)", 0.12, "rgba(253,224,71,0.35)", 0.35, "rgba(251,146,60,0.65)",
+            0.6, "rgba(234,88,12,0.8)", 0.85, "rgba(185,28,28,0.9)", 1, "rgba(127,29,29,0.95)"],
+          "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 8.5, 0.9, 10.5, 0.45]
+        }
+      }, "fires");
       map.addSource("manaus", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [MANAUS[1], MANAUS[0]] } } });
       map.addLayer({ id: "manaus", type: "circle", source: "manaus", paint: { "circle-radius": 6, "circle-stroke-width": 2 } });
+      map.addSource("cities", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "ring-labels",
+        type: "symbol",
+        source: "ring-labels",
+        layout: { "text-field": ["get", "label"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-anchor": "bottom", "text-offset": [0, -0.2] },
+        paint: { "text-halo-width": 1.5, "text-opacity": 0.8 }
+      });
+      map.addLayer({
+        id: "city-dots",
+        type: "circle",
+        source: "cities",
+        filter: ["!=", ["get", "manaus"], true],
+        paint: { "circle-radius": 2.5, "circle-opacity": 0.75 }
+      });
+      map.addLayer({
+        id: "cities",
+        type: "symbol",
+        source: "cities",
+        filter: ["!=", ["get", "manaus"], true],
+        layout: {
+          "text-field": ["get", "nome"],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": 12,
+          "text-variable-anchor": ["top", "bottom", "left", "right"],
+          "text-radial-offset": 0.55,
+          "text-justify": "auto",
+          "text-padding": 4,
+          // quando não cabem todos, ficam os municípios com mais focos
+          "symbol-sort-key": ["get", "rank"]
+        },
+        paint: { "text-halo-width": 1.6 }
+      });
+      map.addLayer({
+        id: "city-manaus",
+        type: "symbol",
+        source: "cities",
+        filter: ["==", ["get", "manaus"], true],
+        layout: {
+          "text-field": ["get", "nome"],
+          "text-font": ["Noto Sans Bold"],
+          "text-size": 14,
+          "text-anchor": "left",
+          "text-offset": [0.9, 0],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true
+        },
+        paint: { "text-halo-width": 2 }
+      });
       resolve();
     });
   });
@@ -531,8 +669,195 @@
       map.setPaintProperty("manaus", "circle-stroke-color", ink);
       map.setPaintProperty("fires", "circle-color", ["match", ["get", "band"],
         0, css("--fire-new"), 1, css("--fire-day"), 2, css("--fire-old"), css("--fire-older")]);
+      ["cities", "city-manaus", "ring-labels"].forEach(function (id) {
+        map.setPaintProperty(id, "text-color", css("--ink"));
+        map.setPaintProperty(id, "text-halo-color", css("--ground"));
+      });
+      map.setPaintProperty("city-dots", "circle-color", css("--ink"));
     });
   }
+
+  // ---------- preferências das camadas (lembradas neste navegador) ----------
+  var prefs = { mode: "pontos", wind: false, level: "superficie", cities: true };
+  try { Object.assign(prefs, JSON.parse(localStorage.getItem("radar-camadas") || "{}")); } catch (e) {}
+  function savePrefs() { try { localStorage.setItem("radar-camadas", JSON.stringify(prefs)); } catch (e) {} }
+
+  function pointOpacity() {
+    var byBand = ["match", ["get", "band"], 0, 0.9, 3, 0.45, 0.7];
+    // no modo calor, os pontos só aparecem de perto, quando o calor já não diz onde está cada foco
+    return prefs.mode === "calor" ? ["interpolate", ["linear"], ["zoom"], 8.5, 0, 10, byBand] : byBand;
+  }
+  function applyLayers() {
+    document.querySelectorAll("[data-mode]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === prefs.mode)); });
+    document.querySelectorAll("[data-level]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.level === prefs.level)); });
+    document.getElementById("opt-wind").checked = prefs.wind;
+    document.getElementById("opt-cities").checked = prefs.cities;
+    document.getElementById("wind-level").hidden = !prefs.wind;
+    document.getElementById("legend-heat").hidden = prefs.mode !== "calor";
+    mapReady.then(function () {
+      map.setLayoutProperty("heat", "visibility", prefs.mode === "calor" ? "visible" : "none");
+      map.setPaintProperty("fires", "circle-opacity", pointOpacity());
+      ["cities", "city-dots", "city-manaus"].forEach(function (id) {
+        map.setLayoutProperty(id, "visibility", prefs.cities ? "visible" : "none");
+      });
+    });
+    wind.setEnabled(prefs.wind);
+  }
+
+  // ---------- nomes das cidades ----------
+  var cidades = [];
+  function drawCities() {
+    if (!cidades.length) return;
+    // prioridade: Manaus, depois os municípios com mais focos no período
+    var count = {};
+    if (state.data) visibleFocos().forEach(function (f) {
+      var code = state.data.municipios[f[3]].codigo_ibge;
+      count[code] = (count[code] || 0) + 1;
+    });
+    var features = cidades.map(function (c) {
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [c.lon, c.lat] },
+        properties: { nome: c.nome, manaus: c.codigo_ibge === "1302603", rank: -(count[c.codigo_ibge] || 0) }
+      };
+    });
+    mapReady.then(function () { map.getSource("cities").setData({ type: "FeatureCollection", features: features }); });
+  }
+
+  // ---------- correntes de vento (partículas) ----------
+  var wind = (function () {
+    var data = null, enabled = false, raf = 0, moving = false, particles = [];
+    var canvas = document.createElement("canvas");
+    canvas.id = "wind-canvas";
+    canvas.setAttribute("aria-hidden", "true");
+    map.getContainer().appendChild(canvas);
+    var ctx = canvas.getContext("2d");
+
+    function resize() {
+      var dpr = Math.min(2, window.devicePixelRatio || 1), r = map.getContainer().getBoundingClientRect();
+      canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+      canvas.style.width = r.width + "px"; canvas.style.height = r.height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var n = Math.round(r.width * r.height / 900);
+      particles = [];
+      for (var i = 0; i < Math.max(400, Math.min(1800, n)); i++) particles.push(spawn({}, true));
+    }
+
+    // vento (m/s) num ponto, interpolado entre os 4 pontos da grade ao redor
+    function sample(lon, lat) {
+      var g = data.grade, field = data[prefs.level];
+      var x = (lon - g.lon0) / g.dlon, y = (lat - g.lat0) / g.dlat;
+      if (x < 0 || y < 0 || x > g.nx - 1 || y > g.ny - 1) return null;
+      var i = Math.min(g.nx - 2, Math.floor(x)), j = Math.min(g.ny - 2, Math.floor(y)), fx = x - i, fy = y - j;
+      var a = field[j * g.nx + i], b = field[j * g.nx + i + 1], c = field[(j + 1) * g.nx + i], d = field[(j + 1) * g.nx + i + 1];
+      return [
+        (a[0] * (1 - fx) + b[0] * fx) * (1 - fy) + (c[0] * (1 - fx) + d[0] * fx) * fy,
+        (a[1] * (1 - fx) + b[1] * fx) * (1 - fy) + (c[1] * (1 - fx) + d[1] * fx) * fy
+      ];
+    }
+
+    function spawn(p, randomAge) {
+      var b = map.getBounds(), g = data && data.grade;
+      var w = b.getWest(), e = b.getEast(), s = b.getSouth(), n = b.getNorth();
+      if (g) {
+        w = Math.max(w, g.lon0); e = Math.min(e, g.lon0 + g.dlon * (g.nx - 1));
+        s = Math.max(s, g.lat0); n = Math.min(n, g.lat0 + g.dlat * (g.ny - 1));
+      }
+      p.lon = w + Math.random() * Math.max(0, e - w);
+      p.lat = s + Math.random() * Math.max(0, n - s);
+      p.max = 60 + Math.random() * 80;
+      p.age = randomAge ? Math.random() * p.max : 0;
+      return p;
+    }
+
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      var r = canvas.getBoundingClientRect();
+      if (moving) ctx.clearRect(0, 0, r.width, r.height);
+      else {
+        // apaga aos poucos o quadro anterior, deixando o rastro das partículas
+        ctx.globalCompositeOperation = "destination-in";
+        ctx.fillStyle = "rgba(0,0,0,0.92)";
+        ctx.fillRect(0, 0, r.width, r.height);
+        ctx.globalCompositeOperation = "source-over";
+      }
+      // ~0,3 px por quadro para cada m/s, em qualquer zoom
+      var pxPerDeg = 512 * Math.pow(2, map.getZoom()) / 360, k = 0.3 / pxPerDeg;
+      ctx.beginPath();
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i], v = sample(p.lon, p.lat);
+        if (!v || ++p.age > p.max) { spawn(p, false); continue; }
+        var a = map.project([p.lon, p.lat]);
+        p.lon += v[0] * k / Math.cos(p.lat * Math.PI / 180);
+        p.lat += v[1] * k;
+        var bpt = map.project([p.lon, p.lat]);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(bpt.x, bpt.y);
+      }
+      ctx.strokeStyle = css("--ink");
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // sem animação para quem prefere menos movimento: setas paradas na grade
+    function drawArrows() {
+      var r = canvas.getBoundingClientRect(), g = data.grade, field = data[prefs.level];
+      ctx.clearRect(0, 0, r.width, r.height);
+      ctx.strokeStyle = css("--ink");
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      for (var j = 0; j < g.ny; j++) for (var i = 0; i < g.nx; i++) {
+        var uv = field[j * g.nx + i], speed = Math.hypot(uv[0], uv[1]);
+        if (speed < 0.3) continue;
+        var c = map.project([g.lon0 + i * g.dlon, g.lat0 + j * g.dlat]);
+        var len = Math.min(28, 6 + speed * 2.2), dx = uv[0] / speed, dy = -uv[1] / speed;
+        var tx = c.x + dx * len / 2, ty = c.y + dy * len / 2;
+        ctx.moveTo(c.x - dx * len / 2, c.y - dy * len / 2); ctx.lineTo(tx, ty);
+        ctx.moveTo(tx, ty); ctx.lineTo(tx - dx * 5 - dy * 3.5, ty - dy * 5 + dx * 3.5);
+        ctx.moveTo(tx, ty); ctx.lineTo(tx - dx * 5 + dy * 3.5, ty - dy * 5 - dx * 3.5);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function legend() {
+      var el = document.getElementById("legend-wind");
+      el.hidden = !(enabled && data);
+      if (!data) return;
+      var field = data[prefs.level], mean = 0;
+      field.forEach(function (uv) { mean += Math.hypot(uv[0], uv[1]); });
+      mean = mean / field.length * 3.6;
+      el.innerHTML = "<strong>Vento " + (prefs.level === "altitude" ? "a ~1,5 km de altura" : "junto ao solo") + "</strong>" +
+        "média de " + mean.toFixed(0) + " km/h na região · Open-Meteo, " + fmtTime.format(new Date(data.atualizado_em)).slice(-5);
+    }
+
+    function start() {
+      cancelAnimationFrame(raf);
+      var r = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, r.width, r.height);
+      if (!enabled || !data) return;
+      if (reducedMotion()) drawArrows(); else frame();
+    }
+
+    map.on("movestart", function () { moving = true; });
+    map.on("moveend", function () {
+      moving = false;
+      if (enabled && data && reducedMotion()) drawArrows();
+      // partículas que saíram da tela renascem dentro da nova área
+      particles.forEach(function (p) { p.age = p.max + 1; });
+    });
+    map.on("resize", function () { resize(); start(); });
+
+    return {
+      setData: function (d) { data = d; resize(); legend(); start(); },
+      setEnabled: function (on) { enabled = on; canvas.hidden = !on; legend(); start(); },
+      refresh: function () { legend(); start(); },
+      available: function () { return !!data; }
+    };
+  })();
   function setBaseLayers() {
     mapReady.then(function () { map.getSource("base").setTiles(baseTiles()); });
   }
@@ -552,6 +877,7 @@
         geometry: { type: "Point", coordinates: [f[1], f[0]] },
         properties: {
           i: i,
+          frp: f[4] || 0,
           band: ageH < 6 ? 0 : ageH < 24 ? 1 : ageH < 48 ? 2 : 3,
           base: f[4] ? Math.min(7, 2.5 + Math.sqrt(f[4]) / 4) : 3
         }
@@ -572,6 +898,8 @@
   // clique com folga de alguns pixels, para acertar pontos pequenos com o dedo
   var popup = new maplibregl.Popup({ maxWidth: "280px", focusAfterOpen: false });
   map.on("click", function (e) {
+    // no modo calor, de longe os pontos estão escondidos: não abre popup de algo invisível
+    if (prefs.mode === "calor" && map.getZoom() < 9) return;
     var p = e.point, slack = 8;
     var hits = map.getLayer("fires") ? map.queryRenderedFeatures([[p.x - slack, p.y - slack], [p.x + slack, p.y + slack]], { layers: ["fires"] }) : [];
     if (!hits.length) return;
@@ -583,7 +911,10 @@
     var f = shownFocos[best.properties.i];
     popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
   });
-  map.on("mouseenter", "fires", function () { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseenter", "fires", function () {
+    if (prefs.mode === "calor" && map.getZoom() < 9) return;
+    map.getCanvas().style.cursor = "pointer";
+  });
   map.on("mouseleave", "fires", function () { map.getCanvas().style.cursor = ""; });
 
   // ---------- pressão de fumaça por município ----------
@@ -783,6 +1114,7 @@
   // ---------- carga ----------
   function renderAll() {
     drawFires();
+    drawCities();
     renderCompass();
     renderMunicipios();
   }
@@ -797,6 +1129,8 @@
 
   function onThemeChange() {
     setBaseLayers();
+    drawRings();
+    wind.refresh();
     if (state.data) { drawRings(); renderAll(); }
     if (state.air) renderAir(state.air, state.weather);
   }
@@ -812,6 +1146,37 @@
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   var dataReq = fetch("data/focos.json", { cache: "no-cache" })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+
+  document.querySelectorAll("[data-mode]").forEach(function (b) {
+    b.addEventListener("click", function () { prefs.mode = b.dataset.mode; savePrefs(); applyLayers(); });
+  });
+  document.querySelectorAll("[data-level]").forEach(function (b) {
+    b.addEventListener("click", function () { prefs.level = b.dataset.level; savePrefs(); applyLayers(); wind.refresh(); });
+  });
+  document.getElementById("opt-wind").addEventListener("change", function (e) { prefs.wind = e.target.checked; savePrefs(); applyLayers(); });
+  document.getElementById("opt-cities").addEventListener("change", function (e) { prefs.cities = e.target.checked; savePrefs(); applyLayers(); });
+  applyLayers();
+  // no celular, camadas e legenda começam recolhidas para não cobrir o mapa
+  if (window.matchMedia("(max-width: 860px)").matches) {
+    document.getElementById("layers-box").open = false;
+    document.getElementById("legend-box").open = false;
+    // o crédito do mapa fica recolhido no (i), sem cobrir o botão da legenda
+    map.once("load", function () {
+      var attrib = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
+      if (attrib) attrib.classList.remove("maplibregl-compact-show");
+    });
+  }
+
+  fetch("data/cidades.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (list) { cidades = list; drawCities(); })
+    .catch(function () { document.getElementById("opt-cities").disabled = true; });
+  fetch("data/vento.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (d) { mapReady.then(function () { wind.setData(d); }); })
+    .catch(function () {
+      var opt = document.getElementById("opt-wind");
+      opt.disabled = true;
+      opt.parentElement.title = "Dados de vento indisponíveis no momento";
+    });
 
   // Cada dado aparece assim que chega: os focos não esperam a Open-Meteo.
   dataReq.then(function (data) {

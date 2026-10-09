@@ -13,6 +13,7 @@ import json
 import math
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,13 @@ RADIUS_KM = 300
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = DATA / "focos.json"
+VENTO = DATA / "vento.json"
+
+# Vento numa grade de 10 x 10 pontos sobre a região, junto ao solo (10 m) e a ~1,5 km
+# (850 hPa), onde a fumaça costuma viajar. 100 pontos por rodada, a cada 30 min,
+# fica abaixo do limite gratuito da Open-Meteo (10 mil consultas por dia).
+WIND_URL = "https://api.open-meteo.com/v1/forecast"
+WIND_GRID = 10
 
 # Com chave (FIRMS_MAP_KEY), a API da FIRMS devolve só a região e até 5 dias.
 FIRMS_API = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{key}/{source}/{area}/{days}"
@@ -218,6 +226,44 @@ def inpe_condicoes(now):
     }
 
 
+def vento():
+    dlat = (RADIUS_KM + 40) / 111.2
+    dlon = (RADIUS_KM + 40) / (111.2 * math.cos(math.radians(MANAUS[0])))
+    lat0, lon0 = MANAUS[0] - dlat, MANAUS[1] - dlon
+    step_lat, step_lon = 2 * dlat / (WIND_GRID - 1), 2 * dlon / (WIND_GRID - 1)
+    pontos = [(lat0 + j * step_lat, lon0 + i * step_lon) for j in range(WIND_GRID) for i in range(WIND_GRID)]
+    query = urllib.parse.urlencode({
+        "latitude": ",".join(f"{lat:.3f}" for lat, _ in pontos),
+        "longitude": ",".join(f"{lon:.3f}" for _, lon in pontos),
+        "current": "wind_speed_10m,wind_direction_10m,wind_speed_850hPa,wind_direction_850hPa",
+        "timezone": "UTC",
+    })
+    with urllib.request.urlopen(f"{WIND_URL}?{query}", timeout=120) as response:
+        respostas = json.load(response)
+
+    def uv(speed_kmh, direction):
+        # direção meteorológica: de onde o vento vem; u para leste, v para norte, em m/s
+        speed = speed_kmh / 3.6
+        rad = math.radians(direction)
+        return [round(-speed * math.sin(rad), 2), round(-speed * math.cos(rad), 2)]
+
+    superficie, altitude = [], []
+    for r in respostas:
+        c = r["current"]
+        superficie.append(uv(c["wind_speed_10m"], c["wind_direction_10m"]))
+        altitude.append(uv(c["wind_speed_850hPa"], c["wind_direction_850hPa"]))
+    payload = {
+        "atualizado_em": respostas[0]["current"]["time"] + "Z",
+        # pontos em linhas de sul para norte, cada linha de oeste para leste
+        "grade": {"lon0": round(lon0, 4), "lat0": round(lat0, 4), "dlon": round(step_lon, 4),
+                  "dlat": round(step_lat, 4), "nx": WIND_GRID, "ny": WIND_GRID},
+        "superficie": superficie,
+        "altitude": altitude,
+    }
+    VENTO.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    print(f"vento em {len(respostas)} pontos -> {VENTO}")
+
+
 def main():
     now = datetime.now(timezone.utc)
     key = firms_key()
@@ -274,6 +320,12 @@ def main():
         ],
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    try:
+        vento()
+    except (urllib.error.URLError, TimeoutError, KeyError, ValueError) as error:
+        # sem vento a página continua funcionando; só a camada de correntes fica indisponível
+        print(f"Open-Meteo indisponível, seguindo sem a grade de vento: {error}")
+
     origem = "API com chave" if key else "arquivos abertos"
     print(f"{len(focos)} focos ({window_hours} h, {origem}) em {len(lista)} municípios -> {OUT} ({OUT.stat().st_size // 1024} KB)")
 

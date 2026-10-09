@@ -16,7 +16,8 @@ A página precisa ser aberta por um servidor (não pelo arquivo direto), porque 
 ## Como funciona
 
 - `scripts/update_data.py` baixa os arquivos abertos de 48 h da NASA FIRMS (VIIRS dos satélites Suomi NPP, NOAA-20 e NOAA-21, e MODIS), mantém os focos dentro do raio, descarta os de baixa confiança e descobre o município de cada um pelos limites do IBGE. Do INPE vêm os dias sem chuva e o risco de fogo por município. Usa só a biblioteca padrão do Python.
-- `scripts/build_municipios.py` gera `data/municipios.json` com os limites dos municípios do raio. Só precisa rodar de novo se o raio mudar.
+- `scripts/build_municipios.py` gera `data/municipios.json` (limites dos municípios do raio) e `data/cidades.json` (sedes, para os nomes no mapa). Só precisa rodar de novo se o raio mudar.
+- O mesmo `update_data.py` busca o vento numa grade de 10 × 10 pontos (junto ao solo e a ~1,5 km) e grava `data/vento.json`, usado pela camada de correntes de vento.
 - `index.html` é um site estático: desenha o mapa e os focos com MapLibre GL (na placa de vídeo) e busca qualidade do ar (PM2.5, AQI) e vento ao vivo na Open-Meteo.
 - O índice "municípios que mais mandam fumaça" soma os focos de cada município, pesando pela distância até Manaus e pelo alinhamento com a direção do vento das últimas 6 h. É uma estimativa relativa, não uma medição.
 - `.github/workflows/update-data.yml` roda a cada 30 minutos no GitHub: baixa os focos e publica o site no GitHub Pages. O `data/focos.json` não vai para o git; ele é gerado na hora, localmente ou pela Action.
@@ -30,5 +31,8 @@ O site fica no GitHub Pages, publicado pela Action (em Settings → Pages, a fon
 - Focos de calor: NASA FIRMS
 - Dias sem chuva e risco de fogo: INPE, Programa Queimadas
 - Limites dos municípios: IBGE
+- Sedes dos municípios: kelvins/municipios-brasileiros (MIT)
+- Vento em grade: Open-Meteo
+- Letras do mapa: OpenFreeMap
 - Qualidade do ar e clima: Open-Meteo (modelo CAMS, Copernicus)
 - Mapa: Esri (World Light/Dark Gray Canvas), com dados do OpenStreetMap
