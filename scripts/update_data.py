@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = DATA / "focos.json"
 GRADE = DATA / "grade.json"
+# Focos publicados na rodada anterior: reserva se a FIRMS ficar fora do ar.
+FOCOS_ANTERIOR = DATA / "focos.prev.json"
+FOCOS_VALIDADE_HORAS = 6
 # Grade publicada na rodada anterior (a Action baixa do site antes de rodar). Se a
 # Open-Meteo falhar, a parte que faltou vem daqui, desde que tenha menos de 3 h.
 GRADE_ANTERIOR = DATA / "grade.prev.json"
@@ -109,13 +112,22 @@ def number(value):
 
 
 def download(url):
-    try:
-        with urllib.request.urlopen(url, timeout=120) as response:
-            return response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            return None
-        raise
+    # falhas de rede passageiras (inclusive no servidor da Action) não devem derrubar a rodada
+    for tentativa in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return None
+            if tentativa == 2 or error.code < 500:
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if tentativa == 2:
+                raise
+        # só o servidor: o caminho da API da FIRMS contém a chave, e o log da Action é público
+        print(f"download de {urllib.parse.urlsplit(url).netloc} falhou; tentando de novo")
+        time.sleep(10 * (tentativa + 1))
 
 
 # ---------- municípios ----------
@@ -305,6 +317,18 @@ def grade():
     print(f"grade {GRID_SIZE}x{GRID_SIZE} ({', '.join(partes)}, vento) -> {GRADE}")
 
 
+def usar_focos_anteriores(now):
+    try:
+        anterior = json.loads(FOCOS_ANTERIOR.read_text(encoding="utf-8"))
+        quando = datetime.fromisoformat(anterior["atualizado_em"])
+    except (OSError, ValueError, KeyError):
+        return False
+    if now - quando > timedelta(hours=FOCOS_VALIDADE_HORAS):
+        return False
+    OUT.write_text(json.dumps(anterior, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return True
+
+
 def grade_anterior(grade_atual):
     """Partes ainda válidas da grade publicada antes (mesma grade, menos de 3 h)."""
     try:
@@ -337,7 +361,16 @@ def main():
         cutoff = max(cutoff, api_start)
     municipios = Municipios(DATA / "municipios.json")
 
-    focos = firms_focos(cutoff, key)
+    try:
+        focos = firms_focos(cutoff, key)
+    except (urllib.error.URLError, TimeoutError, ConnectionError, RuntimeError) as error:
+        # sem focos novos, republica os da rodada anterior se ainda forem recentes;
+        # a página mostra a hora real em que foram baixados
+        if usar_focos_anteriores(now):
+            print(f"FIRMS indisponível ({error}); mantendo os focos da rodada anterior")
+            grade()
+            return
+        raise
     try:
         condicoes = inpe_condicoes(now)
     except (urllib.error.URLError, TimeoutError) as error:

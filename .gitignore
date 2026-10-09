@@ -4,3 +4,4 @@ __pycache__/
 data/focos.json
 data/grade.json
 data/grade.prev.json
+data/focos.prev.json
