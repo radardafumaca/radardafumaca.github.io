@@ -24,6 +24,8 @@ A página precisa ser aberta por um servidor (não pelo arquivo direto), porque 
 
 - Sensores: a cada rodada, `update_data.py` busca os sensores PurpleAir da região (chave `PURPLEAIR_KEY`), corrige o PM2.5 pela fórmula da EPA para fumaça e grava `data/sensores.json`. A mediana dos sensores de Manaus vai para `data/historico.json` (7 dias); se o histórico tiver menos de 48 h, as horas que faltam vêm da API de histórico da PurpleAir.
 
+- Prévia do link: `scripts/build_preview.py` gera `og.jpg` (1200 × 630) com o PM2.5 dos sensores, o foco mais próximo e os focos das últimas 24 h, e preenche as etiquetas `og:*` do HTML. O WhatsApp não roda JavaScript, então título, descrição e imagem precisam estar no HTML. Fontes em `assets/fonts` (licença OFL).
+
 ## Publicação
 
 O site fica no GitHub Pages, publicado pela Action (que também reativa a própria rotina agendada antes de o GitHub desligá-la por inatividade, aos 60 dias sem commit) (em Settings → Pages, a fonte é "GitHub Actions"). A chave da FIRMS vai no secret `FIRMS_MAP_KEY` do repositório.

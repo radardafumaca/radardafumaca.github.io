@@ -52,6 +52,11 @@ jobs:
           if [ -f data/grade.json ]; then cp data/grade.json _site/data/; fi
           if [ -f data/sensores.json ]; then cp data/sensores.json _site/data/; fi
           if [ -f data/historico.json ]; then cp data/historico.json _site/data/; fi
+      # Prévia do link (WhatsApp, redes): imagem e textos com os números do momento.
+      # Se falhar, o site sai com a prévia padrão.
+      - name: Prévia para compartilhar
+        run: |
+          pip install -q "pillow>=11,<13" && python scripts/build_preview.py _site "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" || echo "prévia não gerada; seguindo com a padrão"
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
