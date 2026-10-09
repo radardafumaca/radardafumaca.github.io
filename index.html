@@ -255,6 +255,16 @@
   .heat-ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
   .legend-wind { color: var(--muted); font-size: 12px; line-height: 1.4; }
   .legend-overlay { display: grid; gap: 4px; max-width: 220px; }
+  .legend-sensors { display: grid; gap: 5px; max-width: 230px; }
+  /* "µg" em maiúsculas vira "MG": a unidade fica fora do caixa-alta */
+  .legend-title .unit { text-transform: none; letter-spacing: 0; }
+  .sensor-scale { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; font-size: 11px; align-items: center; }
+  .sensor-scale i { display: inline-block; width: 26px; height: 14px; border-radius: 7px; font: 600 9px/14px var(--font-body); text-align: center; font-style: normal; }
+  .sensor-scale span { color: var(--muted); }
+  .air-sensors { margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+  .air-sensors strong { color: var(--ink); }
+  .spark-cap { margin: 12px 0 -6px; font-size: 12px; color: var(--muted); }
+  .sensor-pop .val { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 700; margin: 2px 0; }
   .overlay-bar { height: 8px; border-radius: 4px; }
   .overlay-ticks { display: flex; justify-content: space-between; gap: 4px; color: var(--muted); font: 11px/1.2 var(--font-data); }
   .overlay-note { color: var(--muted); font-size: 11px; line-height: 1.4; }
@@ -475,6 +485,7 @@
         <button type="button" id="overlay-temperatura" data-overlay="temperatura" aria-pressed="false">Temperatura</button>
         <button type="button" id="overlay-ar" data-overlay="ar" aria-pressed="false">Ar</button>
       </div>
+      <label class="check" for="opt-sensors"><input type="checkbox" id="opt-sensors" checked> Sensores de qualidade do ar</label>
       <label class="check" for="opt-wind"><input type="checkbox" id="opt-wind"> Correntes de vento</label>
       <div class="seg" id="wind-level" role="group" aria-label="Altura do vento" hidden>
         <button type="button" id="level-superficie" data-level="superficie" aria-pressed="true">Solo</button>
@@ -511,6 +522,11 @@
         <span class="overlay-bar" id="legend-overlay-bar"></span>
         <span class="overlay-ticks" id="legend-overlay-ticks"></span>
         <span class="overlay-note" id="legend-overlay-note"></span>
+      </span>
+      <span class="legend-sensors" id="legend-sensors" hidden>
+        <span class="legend-title">Sensores · PM2.5 medido <span class="unit">(µg/m³)</span></span>
+        <span class="sensor-scale" id="sensor-scale"></span>
+        <span class="overlay-note">Círculo com contorno largo: grupo de sensores, mostra o pior valor. Toque para aproximar.</span>
       </span>
       <span class="legend-wind" id="legend-wind" hidden></span>
       </div>
@@ -566,6 +582,7 @@
       <p><strong>Correntes de vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, numa grade de 8 × 8 pontos sobre a região (cerca de 85 km entre eles), atualizada a cada 30 minutos. "Solo" é o vento a 10 m; "1,5 km" é o vento a 850 hPa, altura em que a fumaça costuma viajar.</p>
       <p><strong>Temperatura e qualidade do ar no mapa:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, na mesma grade do vento. A temperatura é a do ar a 2 m; a qualidade do ar usa o índice americano (AQI) do modelo CAMS. As cores entre os pontos são interpoladas: são estimativas de modelo, não medições locais.</p>
       <p><strong>Cidades:</strong> sedes dos municípios do <a href="https://github.com/kelvins/municipios-brasileiros" target="_blank" rel="noopener">kelvins/municipios-brasileiros</a>; letras do mapa do <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
+      <p><strong>Sensores de qualidade do ar:</strong> rede <a href="https://map.purpleair.com/" target="_blank" rel="noopener">PurpleAir</a>, com sensores da UEA (projeto EducAIR/SELVA), da SEMA-AM, do MPAM, da FAS, da UFAM e do IPAM. São sensores de baixo custo: os valores passam pela correção da EPA para PurpleAir em fumaça (a do mapa AirNow Fire and Smoke), que usa a leitura bruta e a umidade. Em fumaça densa a correção aumenta a leitura, porque esses sensores subestimam concentrações altas; acima de ~500 µg/m³ a fórmula é extrapolada. Leituras com os dois canais do sensor discordando ficam de fora.</p>
       <p><strong>Qualidade do ar e vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (modelo CAMS, do Copernicus). O PM2.5 é estimado por modelo numa grade de cerca de 40 km, não medido por sensor em cada bairro.</p>
       <p><strong>Dias sem chuva e risco de fogo:</strong> <a href="https://terrabrasilis.dpi.inpe.br/queimadas/portal/" target="_blank" rel="noopener">INPE – Programa Queimadas</a>, calculados nos focos que o INPE detectou em cada município. O risco vai de 0 a 1; acima de 0,7 é considerado alto ou crítico.</p>
     </section>
@@ -825,9 +842,43 @@
         },
         paint: { "text-halo-width": 2 }
       }, "city-manaus");
+
+      // sensores: de longe, os próximos viram um grupo que mostra o pior valor
+      map.addSource("sensors", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        cluster: true,
+        clusterRadius: 34,
+        clusterMaxZoom: 11,
+        clusterProperties: { max: ["max", ["get", "pm25"]] }
+      });
+      map.addLayer({ id: "sensor-clusters", type: "circle", source: "sensors", filter: ["has", "point_count"],
+        paint: { "circle-radius": 16, "circle-color": sensorColor(["get", "max"]), "circle-stroke-width": 4, "circle-stroke-opacity": 0.55 } }, "alert-labels");
+      map.addLayer({ id: "sensor-points", type: "circle", source: "sensors", filter: ["!", ["has", "point_count"]],
+        paint: { "circle-radius": 14, "circle-color": sensorColor(["get", "pm25"]), "circle-stroke-width": 2 } }, "alert-labels");
+      [["sensor-cluster-text", ["has", "point_count"], "max"], ["sensor-text", ["!", ["has", "point_count"]], "pm25"]].forEach(function (l) {
+        map.addLayer({ id: l[0], type: "symbol", source: "sensors", filter: l[1],
+          layout: { "text-field": ["to-string", ["round", ["get", l[2]]]], "text-font": ["Noto Sans Bold"], "text-size": 11,
+            "text-allow-overlap": true, "text-ignore-placement": true },
+          paint: { "text-color": sensorTextColor(["get", l[2]]) } }, "alert-labels");
+      });
       resolve();
     });
   });
+
+  // ---------- sensores: faixas de PM2.5 (EPA, 2024) ----------
+  var PM_BANDS = [[9, "#40c057", "bom", "até 9"], [35.5, "#fcc419", "moderado", "9–35"], [55.5, "#ff922b", "ruim p/ sensíveis", "35–55"],
+    [125.5, "#f03e3e", "ruim", "55–125"], [225.5, "#ae3ec9", "muito ruim", "125–225"], [Infinity, "#862e3a", "perigoso", "acima de 225"]];
+  function sensorColor(input) {
+    var e = ["step", input, PM_BANDS[0][1]];
+    for (var i = 1; i < PM_BANDS.length; i++) e.push(PM_BANDS[i - 1][0], PM_BANDS[i][1]);
+    return e;
+  }
+  function sensorTextColor(input) { return ["step", input, "#1b2220", 55.5, "#ffffff"]; }
+  function bandOf(v) { for (var i = 0; i < PM_BANDS.length; i++) if (v < PM_BANDS[i][0]) return PM_BANDS[i]; return PM_BANDS[PM_BANDS.length - 1]; }
+  document.getElementById("sensor-scale").innerHTML = PM_BANDS.map(function (b, i) {
+    return '<i style="background:' + b[1] + ";color:" + (i >= 3 ? "#fff" : "#1b2220") + '">' + (i < 5 ? Math.floor(b[0]) : "+") + "</i><span>" + b[3] + " · " + b[2] + "</span>";
+  }).join("");
 
   // cores vêm dos tokens do tema
   function drawRings() {
@@ -843,11 +894,13 @@
         map.setPaintProperty(id, "text-halo-color", css("--ground"));
       });
       map.setPaintProperty("city-dots", "circle-color", css("--ink"));
+      map.setPaintProperty("sensor-points", "circle-stroke-color", css("--surface"));
+      map.setPaintProperty("sensor-clusters", "circle-stroke-color", css("--surface"));
     });
   }
 
   // ---------- preferências das camadas (lembradas neste navegador) ----------
-  var prefs = { fires: true, mode: "pontos", wind: false, level: "superficie", cities: true, overlay: "nenhum" };
+  var prefs = { fires: true, sensors: true, mode: "pontos", wind: false, level: "superficie", cities: true, overlay: "nenhum" };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem("radar-camadas") || "{}")); } catch (e) {}
   function savePrefs() { try { localStorage.setItem("radar-camadas", JSON.stringify(prefs)); } catch (e) {} }
 
@@ -862,6 +915,14 @@
     document.querySelectorAll("[data-overlay]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.overlay === prefs.overlay)); });
     document.getElementById("opt-wind").checked = prefs.wind;
     document.getElementById("opt-cities").checked = prefs.cities;
+    document.getElementById("opt-sensors").checked = prefs.sensors;
+    var showSensors = prefs.sensors && !!(state.sensors && state.sensors.sensores.length);
+    document.getElementById("legend-sensors").hidden = !showSensors;
+    mapReady.then(function () {
+      ["sensor-clusters", "sensor-points", "sensor-cluster-text", "sensor-text"].forEach(function (id) {
+        map.setLayoutProperty(id, "visibility", showSensors ? "visible" : "none");
+      });
+    });
     document.getElementById("opt-fires").checked = prefs.fires;
     document.getElementById("mode-group").hidden = !prefs.fires;
     document.getElementById("legend-fires").hidden = !prefs.fires;
@@ -1144,6 +1205,32 @@
     mapReady.then(function () { map.getSource("fires").setData({ type: "FeatureCollection", features: features }); });
   }
 
+  function manausSensors() {
+    if (!state.sensors) return [];
+    return state.sensors.sensores.filter(function (x) { return distanceKm(MANAUS[0], MANAUS[1], x.lat, x.lon) <= 25; });
+  }
+  function median(vals) {
+    var v = vals.slice().sort(function (a, b) { return a - b; }), m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  }
+  function sensorPopup(x) {
+    var b = bandOf(x.pm25), city = cidades.length ? nearestCity(x.lon, x.lat) : null;
+    return '<div class="sensor-pop"><strong>' + x.nome + "</strong> · " + x.rede +
+      (city ? "<br>perto de " + city.nome + ", " + Math.round(distanceKm(MANAUS[0], MANAUS[1], x.lat, x.lon)) + " km do centro de Manaus" : "") +
+      '<br><span class="val" style="background:' + b[1] + ";color:" + (x.pm25 >= 55.5 ? "#fff" : "#1b2220") + '">' + x.pm25.toFixed(0) + " µg/m³ · " + b[2] + "</span>" +
+      "<br>" + (x.pm25 / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência diária da OMS" +
+      "<br>Leitura bruta do sensor: " + x.bruto.toFixed(0) + " µg/m³ · umidade " + x.umidade + "%" +
+      "<br>Medido em " + fmtTime.format(new Date(x.visto_em)) +
+      '<br><span style="color: var(--muted)">Sensor de baixo custo (PurpleAir), corrigido pela fórmula da EPA para fumaça</span></div>';
+  }
+  function drawSensors() {
+    if (!state.sensors) return;
+    var features = state.sensors.sensores.map(function (x, i) {
+      return { type: "Feature", geometry: { type: "Point", coordinates: [x.lon, x.lat] }, properties: { i: i, pm25: x.pm25 } };
+    });
+    mapReady.then(function () { map.getSource("sensors").setData({ type: "FeatureCollection", features: features }); });
+  }
+
   function popupHtml(f) {
     var muni = state.data.municipios[f[3]];
     return "<strong>" + muni.nome + "</strong><br>" +
@@ -1157,6 +1244,21 @@
   var popup = new maplibregl.Popup({ maxWidth: "280px", focusAfterOpen: false });
   map.on("click", function (e) {
     var p = e.point, slack = 8;
+    if (prefs.sensors && map.getLayer("sensor-points")) {
+      var hs = map.queryRenderedFeatures([[p.x - 4, p.y - 4], [p.x + 4, p.y + 4]], { layers: ["sensor-points", "sensor-clusters"] });
+      if (hs.length) {
+        var h = hs[0];
+        if (h.properties.cluster) {
+          map.getSource("sensors").getClusterExpansionZoom(h.properties.cluster_id).then(function (z) {
+            map.easeTo({ center: h.geometry.coordinates, zoom: Math.min(z + 0.5, MAX_ZOOM), duration: reducedMotion() ? 0 : 600 });
+          });
+        } else {
+          var sn = state.sensors.sensores[h.properties.i];
+          popup.setLngLat([sn.lon, sn.lat]).setHTML(sensorPopup(sn)).addTo(map);
+        }
+        return;
+      }
+    }
     // no modo calor, de longe os pontos estão escondidos: não abre popup de algo invisível
     var pointsVisible = prefs.fires && !(prefs.mode === "calor" && map.getZoom() < 9);
     var hits = pointsVisible && map.getLayer("fires") ? map.queryRenderedFeatures([[p.x - slack, p.y - slack], [p.x + slack, p.y + slack]], { layers: ["fires"] }) : [];
@@ -1181,6 +1283,10 @@
     });
     var f = shownFocos[best.properties.i];
     popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
+  });
+  ["sensor-points", "sensor-clusters"].forEach(function (id) {
+    map.on("mouseenter", id, function () { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", id, function () { map.getCanvas().style.cursor = ""; });
   });
   map.on("mouseenter", "fires", function () {
     if (!prefs.fires || (prefs.mode === "calor" && map.getZoom() < 9)) return;
@@ -1343,6 +1449,18 @@
   function renderAir(air, weather) {
     var box = document.getElementById("air");
     var pm = air.current.pm2_5, aqi = air.current.us_aqi;
+    // com sensores em Manaus, o número principal é medição (mediana), e o modelo vira referência
+    var ms = manausSensors(), sensorsHtml = "", unit = "µg/m³<br>PM2.5";
+    if (ms.length >= 3) {
+      var modelPm = pm;
+      pm = median(ms.map(function (x) { return x.pm25; }));
+      aqi = Math.round(pm25ToAqi(pm));
+      unit = "µg/m³ · PM2.5<br>mediana de " + ms.length + " sensores";
+      var lo = ms.reduce(function (a, b) { return b.pm25 < a.pm25 ? b : a; }), hi = ms.reduce(function (a, b) { return b.pm25 > a.pm25 ? b : a; });
+      sensorsHtml = '<p class="air-sensors">Sensores em Manaus agora: de <strong>' + lo.pm25.toFixed(0) + "</strong> (" + lo.nome + ") a <strong>" +
+        hi.pm25.toFixed(0) + " µg/m³</strong> (" + hi.nome + "). O modelo CAMS estima " + modelPm.toFixed(0) + " µg/m³" +
+        (pm > modelPm * 1.5 ? ": em fumaça densa, o modelo costuma subestimar." : ".") + "</p>";
+    }
     var info = aqiInfo(aqi);
     var endOfToday = air.current.time.slice(0, 10) + "T23:00";
     var keep = air.hourly.time.filter(function (t) { return t <= endOfToday; }).length;
@@ -1352,18 +1470,21 @@
     var ratio = pm / OMS_PM25;
     box.innerHTML =
       '<div class="air-head">' +
-        '<div class="pm"><span class="pm-value">' + pm.toFixed(0) + '</span><span class="pm-unit">µg/m³<br>PM2.5</span></div>' +
+        '<div class="pm"><span class="pm-value">' + pm.toFixed(0) + '</span><span class="pm-unit">' + unit + "</span></div>" +
         '<span class="pill" style="color: var(' + info[2] + ')">' + info[1] + " · AQI " + aqi + "</span>" +
       "</div>" +
       '<p class="air-note">' + (ratio >= 1.05
         ? "<strong>" + ratio.toFixed(1).replace(".", ",") + " vezes</strong> o limite diário recomendado pela OMS (15 µg/m³)."
         : "Dentro do limite diário recomendado pela OMS (15 µg/m³).") +
-      (aqi > 100 ? " Pessoas com asma, idosos e crianças devem evitar esforço ao ar livre." : "") + "</p>" +
+      (aqi > 200 ? " <strong>Evite atividades ao ar livre</strong>; se possível, fique em ambientes fechados e use máscara PFF2 ao sair." :
+        aqi > 100 ? " Pessoas com asma, idosos e crianças devem evitar esforço ao ar livre." : "") + "</p>" +
+      sensorsHtml +
+      (sensorsHtml ? '<p class="spark-cap">Últimas 72 h segundo o modelo CAMS (os sensores medem bem mais):</p>' : "") +
       sparkline(times, values, nowIdx) +
       '<dl class="facts">' +
         "<div><dt>Umidade</dt><dd>" + (weather ? weather.current.relative_humidity_2m + "%" : "—") + "</dd></div>" +
         "<div><dt>Temperatura</dt><dd>" + (weather ? weather.current.temperature_2m.toFixed(0) + "°C" : "—") + "</dd></div>" +
-        "<div><dt>PM10</dt><dd>" + air.current.pm10.toFixed(0) + "</dd></div>" +
+        "<div><dt>PM10 (modelo)</dt><dd>" + air.current.pm10.toFixed(0) + "</dd></div>" +
       "</dl>";
   }
 
@@ -1463,9 +1584,9 @@
           ratio >= 1.5 ? "o ar está <strong>com fumaça acima do recomendado</strong>" :
           ratio >= 1 ? "o ar está um pouco acima do recomendado" : "o ar está dentro do recomendado";
         lead.unshift({ k: "ar", t: airText + " (PM2.5 médio de " + mean.toFixed(0) + " µg/m³, " + ratio.toFixed(1).replace(".", ",") + "× a referência da OMS)" });
-        stats.push('<div><dt>PM2.5 médio hoje</dt><dd>' + mean.toFixed(0) + '<small>µg/m³</small></dd><span class="sum-sub">' +
+        stats.push('<div><dt>PM2.5 médio hoje (modelo)</dt><dd>' + mean.toFixed(0) + '<small>µg/m³</small></dd><span class="sum-sub">' +
           ratio.toFixed(1).replace(".", ",") + "× a referência da OMS</span></div>");
-        stats.push('<div><dt>Horas acima de 15 µg/m³</dt><dd>' + above + "<small>de " + n + '</small></dd><span class="sum-sub">pico de ' +
+        stats.push('<div><dt>Horas acima de 15 µg/m³ (modelo)</dt><dd>' + above + "<small>de " + n + '</small></dd><span class="sum-sub">pico de ' +
           peak.v.toFixed(0) + " às " + peak.h + "</span></div>");
       }
     }
@@ -1512,7 +1633,12 @@
     // frase-síntese: ar em Manaus, focos na região, vento
     var byKey = {}; lead.forEach(function (l) { byKey[l.k] = l.t; });
     var sentences = [];
-    if (byKey.ar) sentences.push("Em Manaus, " + byKey.ar + ".");
+    var msNow = manausSensors();
+    if (msNow.length >= 3) {
+      var med = median(msNow.map(function (x) { return x.pm25; }));
+      sentences.push("Em Manaus, os sensores medem agora PM2.5 de <strong>" + med.toFixed(0) + " µg/m³</strong> (mediana de " + msNow.length + "), " +
+        (med / OMS_PM25).toFixed(0) + "× a referência da OMS: nível <strong>" + bandOf(med)[2] + "</strong>.");
+    } else if (byKey.ar) sentences.push("Em Manaus, " + byKey.ar + ".");
     if (byKey.focos) sentences.push("Na região, " + byKey.focos + ".");
     if (byKey.vento) sentences.push(byKey.vento.charAt(0).toUpperCase() + byKey.vento.slice(1) + ".");
     if (sentences.length) document.getElementById("sum-lead").innerHTML = sentences.join(" ");
@@ -1769,6 +1895,7 @@
   });
   document.getElementById("opt-wind").addEventListener("change", function (e) { prefs.wind = e.target.checked; savePrefs(); applyLayers(); });
   document.getElementById("opt-fires").addEventListener("change", function (e) { prefs.fires = e.target.checked; savePrefs(); applyLayers(); });
+  document.getElementById("opt-sensors").addEventListener("change", function (e) { prefs.sensors = e.target.checked; savePrefs(); applyLayers(); });
   document.getElementById("opt-cities").addEventListener("change", function (e) { prefs.cities = e.target.checked; savePrefs(); applyLayers(); });
   applyLayers();
   // no celular, camadas e legenda começam recolhidas para não cobrir o mapa
@@ -1783,6 +1910,19 @@
     });
   }
 
+  fetch("data/sensores.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (d) {
+      state.sensors = d;
+      drawSensors();
+      applyLayers();
+      if (state.air) renderAir(state.air, state.weather);
+      renderSummary();
+    })
+    .catch(function () {
+      var opt = document.getElementById("opt-sensors");
+      opt.disabled = true;
+      opt.parentElement.title = "Sensores indisponíveis no momento";
+    });
   fetch("data/cidades.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (list) { cidades = list; drawCities(); renderSummary(); })
     .catch(function () { document.getElementById("opt-cities").disabled = true; });

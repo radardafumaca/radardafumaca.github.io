@@ -26,6 +26,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = DATA / "focos.json"
 GRADE = DATA / "grade.json"
+SENSORES = DATA / "sensores.json"
+SENSORES_ANTERIOR = DATA / "sensores.prev.json"
+SENSORES_VALIDADE_HORAS = 2
+PURPLEAIR_URL = "https://api.purpleair.com/v1/sensors"
+# Leitura com os dois canais do sensor discordando muito (confiança baixa) fica de fora.
+CONFIANCA_MINIMA = 50
 # Focos publicados na rodada anterior: reserva se a FIRMS ficar fora do ar.
 FOCOS_ANTERIOR = DATA / "focos.prev.json"
 FOCOS_VALIDADE_HORAS = 6
@@ -75,6 +81,17 @@ INPE_DAILY = (
     "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/"
     "focos_diario_br_{date}.csv"
 )
+
+
+def env_key(name):
+    key = os.environ.get(name, "").strip()
+    env_file = ROOT / ".env"
+    if not key and env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            k, _, value = line.partition("=")
+            if k.strip() == name:
+                key = value.strip().strip('"').strip("'")
+    return key or None
 
 
 def firms_key():
@@ -329,6 +346,107 @@ def usar_focos_anteriores(now):
     return True
 
 
+def pm25_epa(cf1, umidade):
+    """Correção da EPA para sensores PurpleAir, estendida para fumaça (a do mapa AirNow Fire and Smoke).
+
+    cf1 é a média dos dois canais (pm2.5_cf_1) e umidade é a relativa do sensor, em %.
+    """
+    x, rh = cf1, umidade
+    if x < 30:
+        y = 0.524 * x - 0.0862 * rh + 5.75
+    elif x < 50:
+        t = x / 20 - 3 / 2
+        y = (0.786 * t + 0.524 * (1 - t)) * x - 0.0862 * rh + 5.75
+    elif x < 210:
+        y = 0.786 * x - 0.0862 * rh + 5.75
+    elif x < 260:
+        t = x / 50 - 21 / 5
+        y = ((0.69 * t + 0.786 * (1 - t)) * x - 0.0862 * rh * (1 - t)
+             + 2.966 * t + 5.75 * (1 - t) + 8.84e-4 * x * x * t)
+    else:
+        y = 2.966 + 0.69 * x + 8.84e-4 * x * x
+    return max(0.0, y)
+
+
+def rede_do_sensor(nome):
+    n = nome.upper()
+    if n.startswith("UEA"):
+        return "UEA / EducAIR"
+    if n.startswith("SEMA"):
+        return "SEMA-AM"
+    if n.startswith("MPAM"):
+        return "MPAM"
+    if n.startswith("FAS"):
+        return "FAS"
+    if "UFAM" in n:
+        return "UFAM"
+    if "IPAM" in n or "ATTO" in n:
+        return "IPAM / ATTO"
+    return "PurpleAir"
+
+
+def sensores(now):
+    key = env_key("PURPLEAIR_KEY")
+    if not key:
+        print("sem PURPLEAIR_KEY: camada de sensores fica de fora")
+        return
+    w, s_, e, n = (float(v) for v in region_bbox().split(","))
+    query = urllib.parse.urlencode({
+        "fields": "name,latitude,longitude,last_seen,pm2.5_cf_1,humidity,confidence",
+        "location_type": 0,  # só sensores externos
+        "max_age": 3600,     # só os que enviaram dados na última hora
+        "nwlng": w, "nwlat": n, "selng": e, "selat": s_,
+    })
+    lista, descartados = [], 0
+    try:
+        req = urllib.request.Request(f"{PURPLEAIR_URL}?{query}", headers={"X-API-Key": key})
+        for tentativa in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    resposta = json.load(response)
+                break
+            except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+                if tentativa == 2:
+                    raise
+                time.sleep(10 * (tentativa + 1))
+        campos = resposta["fields"]
+        for valores in resposta["data"]:
+            r = dict(zip(campos, valores))
+            if r.get("pm2.5_cf_1") is None or r.get("latitude") is None:
+                continue
+            if distance_km(*MANAUS, r["latitude"], r["longitude"]) > RADIUS_KM:
+                continue
+            if (r.get("confidence") or 0) < CONFIANCA_MINIMA:
+                descartados += 1
+                continue
+            umidade = r["humidity"] if r.get("humidity") is not None else 50
+            lista.append({
+                "nome": r["name"].strip(),
+                "rede": rede_do_sensor(r["name"]),
+                "lat": round(r["latitude"], 4),
+                "lon": round(r["longitude"], 4),
+                "pm25": round(pm25_epa(r["pm2.5_cf_1"], umidade), 1),
+                "bruto": round(r["pm2.5_cf_1"], 1),
+                "umidade": umidade,
+                "visto_em": datetime.fromtimestamp(r["last_seen"], timezone.utc).isoformat(timespec="minutes"),
+            })
+    except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError, KeyError) as error:
+        print(f"PurpleAir indisponível: {error}")
+        try:
+            anterior = json.loads(SENSORES_ANTERIOR.read_text(encoding="utf-8"))
+            quando = datetime.fromisoformat(anterior["atualizado_em"])
+            if now - quando <= timedelta(hours=SENSORES_VALIDADE_HORAS):
+                SENSORES.write_text(json.dumps(anterior, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+                print("mantendo os sensores da rodada anterior")
+        except (OSError, ValueError, KeyError):
+            pass
+        return
+    lista.sort(key=lambda x: -x["pm25"])
+    payload = {"atualizado_em": now.isoformat(timespec="minutes"), "descartados": descartados, "sensores": lista}
+    SENSORES.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"{len(lista)} sensores PurpleAir ({descartados} descartados por baixa confiança) -> {SENSORES}")
+
+
 def grade_anterior(grade_atual):
     """Partes ainda válidas da grade publicada antes (mesma grade, menos de 3 h)."""
     try:
@@ -369,6 +487,7 @@ def main():
         if usar_focos_anteriores(now):
             print(f"FIRMS indisponível ({error}); mantendo os focos da rodada anterior")
             grade()
+            sensores(now)
             return
         raise
     try:
@@ -422,6 +541,7 @@ def main():
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     grade()
+    sensores(now)
 
     origem = "API com chave" if key else "arquivos abertos"
     print(f"{len(focos)} focos ({window_hours} h, {origem}) em {len(lista)} municípios -> {OUT} ({OUT.stat().st_size // 1024} KB)")
