@@ -137,6 +137,35 @@
     font-size: 12px;
   }
   .legend-body { display: grid; gap: 6px; margin-top: 8px; }
+
+  .map-info {
+    position: absolute; right: 12px; bottom: 34px; z-index: 500;
+    display: grid; gap: 8px; justify-items: end; max-width: min(300px, calc(100% - 24px));
+  }
+  .alert-chip {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 10px;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--level);
+    border-radius: 6px; font: 600 13px/1.3 var(--font-body); text-align: left; cursor: pointer;
+  }
+  .alert-chip::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--level); }
+  .alert-chip:hover { background: var(--ground); }
+  .alert-chip:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .map-forecast { padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+  .map-fc-body { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+  .map-fc-body li { display: grid; grid-template-columns: 34px 20px 1fr auto; gap: 0 8px; align-items: center; font-size: 13px; }
+  .map-fc-body .d { font-weight: 600; }
+  .map-fc-body svg { width: 18px; height: 18px; color: var(--muted); }
+  .map-fc-body .t { font: 600 15px/1 var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .map-fc-body .t small { font-weight: 500; color: var(--muted); }
+  .map-fc-body .m { grid-column: 3 / -1; font-size: 12px; line-height: 1.3; color: var(--muted); }
+  .map-fc-body .m i { font-style: normal; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; background: var(--dot); }
+
+  .fire-pulse { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--level); pointer-events: none; }
+  .fire-pulse::after {
+    content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--level);
+    animation: fire-pulse 1.8s ease-out infinite;
+  }
+  @keyframes fire-pulse { from { transform: scale(1); opacity: 0.9; } to { transform: scale(2.8); opacity: 0; } }
   .collapsible summary {
     list-style: none;
     cursor: pointer;
@@ -398,6 +427,8 @@
     .layers { top: 52px; right: 8px; padding: 8px; }
     .layers-body { gap: 6px; }
     .legend { left: 8px; bottom: 16px; padding: 8px 10px; }
+    .map-info { right: 8px; bottom: 30px; max-width: 58%; }
+    .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; }
     .panel { border-left: 0; overflow: visible; }
     .top { padding-inline: 16px; }
     section { padding: 18px 16px; }
@@ -449,6 +480,13 @@
       <label class="check" for="opt-cities"><input type="checkbox" id="opt-cities" checked> Nomes das cidades</label>
       </div>
     </details>
+    <div class="map-info">
+      <button type="button" class="alert-chip" id="alert-chip" hidden></button>
+      <details class="map-forecast collapsible" id="map-fc" open hidden>
+        <summary>Previsão</summary>
+        <ol class="map-fc-body" id="map-fc-body"></ol>
+      </details>
+    </div>
     <details class="legend collapsible" id="legend-box" open>
       <summary>Legenda</summary>
       <div class="legend-body">
@@ -757,11 +795,30 @@
           "text-size": 14,
           "text-anchor": "left",
           "text-offset": [0.9, 0],
-          "text-allow-overlap": true,
-          "text-ignore-placement": true
+          "text-allow-overlap": true
         },
         paint: { "text-halo-width": 2 }
       });
+      // alerta: anel do raio de alerta e rótulos dos focos mais próximos (por cima dos nomes)
+      map.addSource("alert-ring", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "alert-ring", type: "line", source: "alert-ring", paint: { "line-width": 2, "line-opacity": 0.85 } }, "fires");
+      // (abaixo do nome de Manaus: Manaus é posicionado primeiro e os rótulos dos focos desviam dele)
+      map.addSource("alert-fires", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "alert-labels",
+        type: "symbol",
+        source: "alert-fires",
+        layout: {
+          "text-field": ["get", "label"],
+          "text-font": ["Noto Sans Bold"],
+          "text-size": 12,
+          "text-variable-anchor": ["left", "right", "top", "bottom"],
+          "text-radial-offset": 1.1,
+          "text-padding": 3,
+          "symbol-sort-key": ["get", "rank"]
+        },
+        paint: { "text-halo-width": 2 }
+      }, "city-manaus");
       resolve();
     });
   });
@@ -1494,11 +1551,52 @@
       li.appendChild(btn);
       ul.appendChild(li);
     });
+    renderMapAlert(level, picked, when);
     document.getElementById("alert-meta").innerHTML =
       "Dentro do município de Manaus: <strong>" + fmtInt.format(inManaus) + (inManaus === 1 ? " foco" : " focos") + "</strong> nas últimas 24 h. " +
       (lastSeen ? "Última detecção dos satélites: " + (localDay(lastSeen) === today ? "hoje às " : "") + when(lastSeen).replace("ontem ", "ontem às ") + ". " : "") +
       "Os satélites passam algumas vezes por dia e não veem fogo pequeno ou sob nuvens: não ver foco não garante que não há fogo. " +
       "<strong>Em caso de incêndio, ligue 193</strong> (Corpo de Bombeiros).";
+  }
+
+  // ---------- alerta no mapa ----------
+  var LEVEL_COLOR = { alerta: "--aqi-bad", atencao: "--aqi-sensitive", ok: "--aqi-good" };
+  var pulseMarkers = [];
+  function renderMapAlert(level, picked, when) {
+    var color = css(LEVEL_COLOR[level]);
+    pulseMarkers.forEach(function (m) { m.remove(); });
+    pulseMarkers = [];
+    // destaque só faz sentido quando há fogo perto
+    var show = level === "ok" ? [] : picked;
+    show.forEach(function (r) {
+      var el = document.createElement("div");
+      el.className = "fire-pulse";
+      el.style.setProperty("--level", "var(" + LEVEL_COLOR[level] + ")");
+      pulseMarkers.push(new maplibregl.Marker({ element: el }).setLngLat([r.f[1], r.f[0]]).addTo(map));
+    });
+    mapReady.then(function () {
+      map.getSource("alert-fires").setData({ type: "FeatureCollection", features: show.map(function (r, i) {
+        return { type: "Feature", geometry: { type: "Point", coordinates: [r.f[1], r.f[0]] },
+          properties: { label: Math.round(r.km) + " km · " + when(r.f[2]), rank: i } };
+      }) });
+      var radius = level === "alerta" ? 50 : level === "atencao" ? 100 : 0;
+      map.getSource("alert-ring").setData({ type: "FeatureCollection", features: radius ? [{
+        type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: ringCoords(radius) } }] : [] });
+      map.setPaintProperty("alert-ring", "line-color", color);
+      map.setPaintProperty("alert-labels", "text-color", color);
+      map.setPaintProperty("alert-labels", "text-halo-color", css("--surface"));
+    });
+
+    var chip = document.getElementById("alert-chip"), near = picked[0];
+    chip.hidden = false;
+    chip.style.setProperty("--level", "var(" + LEVEL_COLOR[level] + ")");
+    chip.textContent = level === "ok" ? "Nenhum foco a menos de 100 km (12 h)" :
+      "Foco ativo a " + Math.round(near.km) + " km de Manaus · " + state.data.municipios[near.f[3]].nome;
+    chip.onclick = function () {
+      if (level === "ok") { fitRegion(); return; }
+      map.flyTo({ center: [near.f[1], near.f[0]], zoom: 11, duration: reducedMotion() ? 0 : 900 });
+      popup.setLngLat([near.f[1], near.f[0]]).setHTML(popupHtml(near.f)).addTo(map);
+    };
   }
 
   // ---------- previsão do tempo ----------
@@ -1561,6 +1659,20 @@
     var tomorrow = future[0], smT = tomorrow != null && smoke[d.time[tomorrow]] ? smoke[d.time[tomorrow]][0] / smoke[d.time[tomorrow]][1] : null;
     if (smT != null) lead += " Para amanhã, o modelo prevê PM2.5 médio de " + smT.toFixed(0) + " µg/m³ (" + (smT / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência da OMS).";
     document.getElementById("fc-lead").innerHTML = lead;
+
+    // cartão compacto no mapa: hoje e os 3 dias seguintes
+    var card = document.getElementById("map-fc");
+    card.hidden = false;
+    document.getElementById("map-fc-body").innerHTML = days.slice(0, 4).map(function (i) {
+      var t = d.time[i], w = weatherOf(d.weather_code[i]), rain = d.precipitation_sum[i];
+      var label = t === todayKey ? "Hoje" : fmtFcDay.format(new Date(t + "T12:00Z")).replace(".", "");
+      label = label.charAt(0).toUpperCase() + label.slice(1);
+      var sm = smoke[t] && smoke[t][1] >= 12 ? smoke[t][0] / smoke[t][1] : null;
+      return '<li><span class="d">' + label + '</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-label="' + w[1] + '">' +
+        ICONS[w[2]] + '</svg><span>' + w[1] + '</span><span class="t">' + Math.round(d.temperature_2m_max[i]) + "°<small>/" + Math.round(d.temperature_2m_min[i]) + "°</small></span>" +
+        '<span class="m">chuva ' + (rain != null ? rain.toFixed(1).replace(".", ",") : "—") + " mm" +
+        (sm != null ? ' · <i style="--dot: var(' + aqiInfo(pm25ToAqi(sm))[2] + ')"></i>fumaça ' + sm.toFixed(0) + " µg/m³" : "") + "</span></li>";
+    }).join("");
   }
 
   // AQI americano a partir do PM2.5 (faixas da EPA), só para colorir a fumaça prevista
@@ -1606,6 +1718,7 @@
 
   function onThemeChange() {
     setBaseLayers();
+    if (state.data) renderFireAlert();
     if (state.data) renderSummary();
     drawRings();
     wind.refresh();
@@ -1643,6 +1756,7 @@
   if (window.matchMedia("(max-width: 860px)").matches) {
     document.getElementById("layers-box").open = false;
     document.getElementById("legend-box").open = false;
+    document.getElementById("map-fc").open = false;
     // o crédito do mapa fica recolhido no (i), sem cobrir o botão da legenda
     map.once("load", function () {
       var attrib = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
