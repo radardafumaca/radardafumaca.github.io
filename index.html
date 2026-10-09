@@ -236,9 +236,53 @@
     border-radius: 6px;
     font-size: 13px;
   }
-  .layers-body { display: grid; gap: 8px; justify-items: end; margin-top: 8px; }
+  .layers { width: 252px; }
+  .layers-body { display: grid; gap: 2px; margin-top: 6px; }
   .layers summary { justify-content: flex-end; }
-  .layers-note { margin: 0; max-width: 230px; font-size: 12px; line-height: 1.4; color: var(--muted); text-align: right; }
+  .layers-group {
+    margin: 10px 0 4px; font: 600 10px/1 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  }
+  .layers-group:first-child { margin-top: 4px; }
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 34px; padding: 4px 6px; margin: 0 -6px; border-radius: 6px;
+    font-size: 13px; color: var(--ink); cursor: pointer;
+  }
+  .switch-row:hover { background: var(--ground); }
+  .switch {
+    appearance: none; -webkit-appearance: none; flex: none; position: relative; margin: 0;
+    width: 32px; height: 18px; border-radius: 9px; background: var(--line); cursor: pointer;
+    transition: background 0.15s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transition: transform 0.15s;
+  }
+  .switch:checked { background: var(--ember); }
+  .switch:checked::after { transform: translateX(14px); }
+  .switch:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .switch:disabled { opacity: 0.4; cursor: not-allowed; }
+  .switch-row:has(.switch:disabled) { cursor: not-allowed; color: var(--muted); }
+  /* sub-opção fica recuada sob a camada a que pertence */
+  .sub-option { margin: 0 0 6px 2px; padding-left: 10px; border-left: 2px solid var(--line); }
+  .sub-option .seg { width: 100%; }
+  .sub-option .seg button { flex: 1; }
+  .radio-list { display: grid; gap: 1px; }
+  .radio-row {
+    display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 4px 6px; margin: 0 -6px;
+    border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: 13px/1.2 var(--font-body); text-align: left; cursor: pointer;
+  }
+  .radio-row:hover { background: var(--ground); }
+  .radio-row:focus-visible { outline: 2px solid var(--ember); outline-offset: 1px; }
+  .radio { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--muted); display: grid; place-items: center; }
+  .radio-row[aria-pressed="true"] .radio { border-color: var(--ember); }
+  .radio-row[aria-pressed="true"] .radio::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ember); }
+  .radio-row:disabled { color: var(--muted); cursor: not-allowed; opacity: 0.55; }
+  .swatch { margin-left: auto; width: 46px; height: 8px; border-radius: 4px; }
+  .swatch-temp { background: linear-gradient(90deg, #2c7bb6, #00a6ca, #7fd3a0, #f4ec7a, #f9b44c, #ee6a26, #c81e1e); }
+  .swatch-air { background: linear-gradient(90deg, #40c057, #94d82d, #fcc419, #ff922b, #f03e3e, #ae3ec9, #862e3a); }
+  .layers-note { text-align: left; margin-top: 6px; }
+  .layers-note { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
   .seg { display: flex; gap: 2px; padding: 2px; border-radius: 5px; background: var(--ground); }
   .seg button {
     border: 0;
@@ -251,9 +295,7 @@
   }
   .seg button:disabled { opacity: 0.45; cursor: not-allowed; }
   .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
-  .seg button:focus-visible, .check input:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
-  .check { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); white-space: nowrap; }
-  .check input { accent-color: var(--ember); margin: 0; }
+  .seg button:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
   .legend-heat, .legend-wind { display: grid; gap: 4px; max-width: 200px; }
   .heat-bar {
     height: 8px;
@@ -472,8 +514,9 @@
     .window button { padding: 6px 9px; font-size: 12px; }
     .fire-pulse { width: 12px; height: 12px; border-width: 1.5px; }
     .fire-pulse::after { border-width: 1.5px; }
-    .layers { top: 46px; right: 8px; padding: 6px 8px; }
-    .layers-body { gap: 6px; }
+    .layers { top: 46px; right: 8px; padding: 6px 10px; width: min(252px, calc(100vw - 16px)); }
+    .layers-body { max-height: 55vh; max-height: 55svh; overflow-y: auto; overscroll-behavior: contain; }
+    .switch-row, .radio-row { min-height: 38px; }
     .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: min(230px, calc(100% - 16px)); }
     .legend-body { gap: 5px; font-size: 12px; max-height: 40vh; max-height: 40svh; overflow-y: auto; overscroll-behavior: contain; }
     .legend-fires { grid-template-columns: auto auto; column-gap: 12px; row-gap: 3px; }
@@ -489,7 +532,8 @@
     .legend-overlay, .legend-sensors, .legend-heat, .legend-wind { max-width: none; }
     .legend-wind { font-size: 11px; }
     /* legenda aberta ocupa o pé do mapa: aviso e previsão saem até ela fechar */
-    .map-wrap:has(#legend-box[open]) .map-info { display: none; }
+    /* legenda ou camadas abertas ocupam a altura do mapa: aviso e previsão saem até elas fecharem */
+    .map-wrap:has(#legend-box[open]) .map-info, .map-wrap:has(#layers-box[open]) .map-info { display: none; }
     /* créditos abertos: letra pequena, quebram em linhas no canto direito sem chegar ao botão da legenda */
     .maplibregl-ctrl-attrib-inner { font-size: 10px; line-height: 1.3; }
     /* a largura conta também o espaço do botão (i) e as margens internas (~36 px) */
@@ -533,24 +577,43 @@
     <details class="layers collapsible" id="layers-box">
       <summary>Camadas</summary>
       <div class="layers-body">
-      <label class="check" for="opt-fires"><input type="checkbox" id="opt-fires" checked> Focos de incêndio</label>
-      <div class="seg" id="mode-group" role="group" aria-label="Como mostrar os focos">
-        <button type="button" id="mode-pontos" data-mode="pontos" aria-pressed="true">Pontos</button>
-        <button type="button" id="mode-calor" data-mode="calor" aria-pressed="false">Calor</button>
-      </div>
-      <div class="seg" role="group" aria-label="Dado em cores no fundo do mapa">
-        <button type="button" id="overlay-nenhum" data-overlay="nenhum" aria-pressed="true">Sem cor</button>
-        <button type="button" id="overlay-temperatura" data-overlay="temperatura" aria-pressed="false">Temperatura</button>
-        <button type="button" id="overlay-ar" data-overlay="ar" aria-pressed="false">Ar</button>
-      </div>
-      <label class="check" for="opt-sensors"><input type="checkbox" id="opt-sensors" checked> Sensores de qualidade do ar</label>
-      <label class="check" for="opt-wind"><input type="checkbox" id="opt-wind"> Correntes de vento</label>
-      <div class="seg" id="wind-level" role="group" aria-label="Altura do vento" hidden>
-        <button type="button" id="level-superficie" data-level="superficie" aria-pressed="true">Solo</button>
-        <button type="button" id="level-altitude" data-level="altitude" aria-pressed="false">1,5 km</button>
-      </div>
-      <label class="check" for="opt-cities"><input type="checkbox" id="opt-cities" checked> Nomes das cidades</label>
-      <p class="layers-note" id="layers-note" role="status" hidden></p>
+        <p class="layers-group">No mapa</p>
+        <label class="switch-row" for="opt-fires">
+          <span>Focos de incêndio</span>
+          <input type="checkbox" class="switch" role="switch" id="opt-fires" checked>
+        </label>
+        <div class="sub-option" id="mode-group">
+          <div class="seg" role="group" aria-label="Como mostrar os focos">
+            <button type="button" id="mode-pontos" data-mode="pontos" aria-pressed="true">Pontos</button>
+            <button type="button" id="mode-calor" data-mode="calor" aria-pressed="false">Mapa de calor</button>
+          </div>
+        </div>
+        <label class="switch-row" for="opt-sensors">
+          <span>Sensores de qualidade do ar</span>
+          <input type="checkbox" class="switch" role="switch" id="opt-sensors" checked>
+        </label>
+        <label class="switch-row" for="opt-wind">
+          <span>Correntes de vento</span>
+          <input type="checkbox" class="switch" role="switch" id="opt-wind">
+        </label>
+        <div class="sub-option" id="wind-level" hidden>
+          <div class="seg" role="group" aria-label="Altura do vento">
+            <button type="button" id="level-superficie" data-level="superficie" aria-pressed="true">Junto ao solo</button>
+            <button type="button" id="level-altitude" data-level="altitude" aria-pressed="false">A 1,5 km</button>
+          </div>
+        </div>
+        <label class="switch-row" for="opt-cities">
+          <span>Nomes das cidades</span>
+          <input type="checkbox" class="switch" role="switch" id="opt-cities" checked>
+        </label>
+
+        <p class="layers-group">Cor de fundo do mapa</p>
+        <div class="radio-list" role="group" aria-label="Dado em cores no fundo do mapa">
+          <button type="button" class="radio-row" id="overlay-nenhum" data-overlay="nenhum" aria-pressed="true"><span class="radio"></span>Nenhuma</button>
+          <button type="button" class="radio-row" id="overlay-temperatura" data-overlay="temperatura" aria-pressed="false"><span class="radio"></span>Temperatura<span class="swatch swatch-temp"></span></button>
+          <button type="button" class="radio-row" id="overlay-ar" data-overlay="ar" aria-pressed="false"><span class="radio"></span>Qualidade do ar<span class="swatch swatch-air"></span></button>
+        </div>
+        <p class="layers-note" id="layers-note" role="status" hidden></p>
       </div>
     </details>
     <div class="map-info">
