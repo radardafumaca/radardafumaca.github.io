@@ -123,6 +123,13 @@
   .stamp { font: 12px/1.4 var(--font-data); color: var(--muted); }
 
   .map-wrap { grid-area: map; position: relative; min-height: 0; }
+  .map-wrap:fullscreen { background: var(--ground); }
+  /* tela cheia sem a API do navegador (iPhone): o mapa cobre a página */
+  body.map-full { overflow: hidden; }
+  body.map-full .map-wrap {
+    position: fixed; inset: 0; z-index: 1000; min-height: 0;
+    height: 100vh; height: 100dvh; background: var(--ground);
+  }
   #map { position: absolute; inset: 0; background: var(--ground); }
 
   .legend {
@@ -717,7 +724,7 @@
     btn.className = "reset-view";
     btn.title = "Ver a região inteira";
     btn.setAttribute("aria-label", "Ver a região inteira");
-    btn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+    btn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/><path d="M8 0.5v2.5M8 13v2.5M0.5 8H3M13 8h2.5"/></svg>';
     btn.addEventListener("click", fitRegion);
     bar.appendChild(btn);
     this._bar = bar;
@@ -725,6 +732,53 @@
   };
   ResetControl.prototype.onRemove = function () { this._bar.remove(); };
   map.addControl(new ResetControl(), "top-left");
+
+  // ---------- tela cheia ----------
+  // Tela cheia de verdade onde o navegador permite; no iPhone (que não permite para páginas), o mapa cobre a página.
+  var mapWrap = document.querySelector(".map-wrap");
+  var ICON_EXPAND = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  var ICON_SHRINK = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  var fullBtn = null;
+  function isFull() { return document.fullscreenElement === mapWrap || document.body.classList.contains("map-full"); }
+  function afterFullChange() {
+    var on = isFull();
+    if (fullBtn) {
+      fullBtn.innerHTML = on ? ICON_SHRINK : ICON_EXPAND;
+      fullBtn.title = on ? "Sair da tela cheia" : "Tela cheia";
+      fullBtn.setAttribute("aria-label", fullBtn.title);
+      fullBtn.setAttribute("aria-pressed", String(on));
+    }
+    setTimeout(function () { map.resize(); }, 60);
+  }
+  function setPseudoFull(on) { document.body.classList.toggle("map-full", on); afterFullChange(); }
+  function toggleFull() {
+    if (isFull()) {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else setPseudoFull(false);
+      return;
+    }
+    var iphone = /iPhone|iPod/.test(navigator.userAgent);
+    if (mapWrap.requestFullscreen && !iphone) mapWrap.requestFullscreen().catch(function () { setPseudoFull(true); });
+    else setPseudoFull(true);
+  }
+  document.addEventListener("fullscreenchange", afterFullChange);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && document.body.classList.contains("map-full")) setPseudoFull(false); });
+  function FullControl() {}
+  FullControl.prototype.onAdd = function () {
+    var bar = document.createElement("div");
+    bar.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    fullBtn = document.createElement("button");
+    fullBtn.type = "button";
+    fullBtn.className = "reset-view";
+    fullBtn.id = "fullscreen-btn";
+    fullBtn.addEventListener("click", toggleFull);
+    bar.appendChild(fullBtn);
+    this._bar = bar;
+    afterFullChange();
+    return bar;
+  };
+  FullControl.prototype.onRemove = function () { this._bar.remove(); };
+  map.addControl(new FullControl(), "top-left");
 
 
   var mapReady = new Promise(function (resolve) {
@@ -1022,8 +1076,11 @@
         var v = sampleGrid(sc.field, w + (e - w) * px / (W - 1), n - (n - s) * py / (H - 1));
         var k = (py * W + px) * 4;
         if (v == null) { img.data[k + 3] = 0; continue; }
+        // círculo em volta de Manaus que se dissolve entre 260 e 340 km (a grade é quadrada; a borda reta ficava feia)
+        var dist = distanceKm(MANAUS[0], MANAUS[1], n - (n - s) * py / (H - 1), w + (e - w) * px / (W - 1));
+        var fade = Math.max(0, Math.min(1, (340 - dist) / 80));
         var rgb = colorAt(sc.stops, v);
-        img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = 255;
+        img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = Math.round(255 * fade * fade * (3 - 2 * fade));
       }
       c2.putImageData(img, 0, 0);
       var url = cv.toDataURL();
@@ -1102,8 +1159,13 @@
         w = Math.max(w, g.lon0); e = Math.min(e, g.lon0 + g.dlon * (g.nx - 1));
         s = Math.max(s, g.lat0); n = Math.min(n, g.lat0 + g.dlat * (g.ny - 1));
       }
-      p.lon = w + Math.random() * Math.max(0, e - w);
-      p.lat = s + Math.random() * Math.max(0, n - s);
+      // sorteia dentro do círculo; cada partícula morre num raio diferente (290 a 340 km), e a borda se dissolve
+      for (var tries = 0; tries < 8; tries++) {
+        p.lon = w + Math.random() * Math.max(0, e - w);
+        p.lat = s + Math.random() * Math.max(0, n - s);
+        if (distanceKm(MANAUS[0], MANAUS[1], p.lat, p.lon) < 330) break;
+      }
+      p.edge = 290 + Math.random() * 50;
       p.max = 60 + Math.random() * 80;
       p.age = randomAge ? Math.random() * p.max : 0;
       return p;
@@ -1125,7 +1187,7 @@
       ctx.beginPath();
       for (var i = 0; i < particles.length; i++) {
         var p = particles[i], v = sample(p.lon, p.lat);
-        if (!v || ++p.age > p.max) { spawn(p, false); continue; }
+        if (!v || ++p.age > p.max || distanceKm(MANAUS[0], MANAUS[1], p.lat, p.lon) > p.edge) { spawn(p, false); continue; }
         var a = map.project([p.lon, p.lat]);
         p.lon += v[0] * k / Math.cos(p.lat * Math.PI / 180);
         p.lat += v[1] * k;
