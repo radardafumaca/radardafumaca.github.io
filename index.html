@@ -432,15 +432,26 @@
     .app {
       height: auto;
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto 62vh auto;
+      grid-template-rows: auto 72vh auto;
+      grid-template-rows: auto 72svh auto;
       grid-template-areas: "top" "map" "panel";
     }
-    .map-wrap { min-height: 360px; }
-    .layers { top: 52px; right: 8px; padding: 8px; }
+    .map-wrap { min-height: 420px; }
+    .top { padding-block: 10px 8px; gap: 2px 12px; }
+    h1 { font-size: 24px; }
+    .place { font-size: 13px; }
+    .stamp { font-size: 11px; }
+    .window { top: 8px; right: 8px; padding: 2px; }
+    .window button { padding: 6px 9px; font-size: 12px; }
+    .fire-pulse { width: 12px; height: 12px; border-width: 1.5px; }
+    .fire-pulse::after { border-width: 1.5px; }
+    .layers { top: 46px; right: 8px; padding: 6px 8px; }
     .layers-body { gap: 6px; }
-    .legend { left: 8px; bottom: 16px; padding: 8px 10px; }
-    .map-info { right: 8px; bottom: 30px; max-width: 58%; }
-    .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; }
+    .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: calc(100% - 16px); }
+    .map-info { right: 8px; bottom: 30px; max-width: 62%; }
+    .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .alert-chip::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
+    .map-forecast { padding: 6px 10px; }
     .panel { border-left: 0; overflow: visible; }
     .top { padding-inline: 16px; }
     section { padding: 18px 16px; }
@@ -652,6 +663,9 @@
     return [[w - px, s - py], [e + px, n + py]];
   }
   var regionBox = boxOf(ringCoords(300));
+  // No celular, a tela é pequena: o mapa abre nos 150 km em volta de Manaus e mostra menos coisa de uma vez.
+  var MOBILE = window.matchMedia("(max-width: 860px)").matches;
+  var startBox = MOBILE ? boxOf(ringCoords(150)) : regionBox;
 
   function isDark() {
     var t = document.documentElement.getAttribute("data-theme");
@@ -676,7 +690,7 @@
       },
       layers: [{ id: "base", type: "raster", source: "base" }]
     },
-    bounds: regionBox,
+    bounds: startBox,
     fitBoundsOptions: { padding: 16 },
     minZoom: 4.5,
     maxZoom: MAX_ZOOM,
@@ -688,7 +702,8 @@
   });
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
+  // no celular o zoom é pela pinça; os botões + e − só ocupariam espaço
+  if (!MOBILE) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
 
   function reducedMotion() { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
   function fitRegion() { map.fitBounds(regionBox, { padding: 16, duration: reducedMotion() ? 0 : 600 }); }
@@ -749,10 +764,10 @@
         paint: {
           // pontos crescem ao aproximar e encolhem na visão geral
           "circle-radius": ["interpolate", ["linear"], ["zoom"],
-            5, ["max", 1.5, ["*", ["get", "base"], 0.55]],
-            6.5, ["*", ["get", "base"], 1],
-            9, ["*", ["get", "base"], 1.6],
-            12, ["*", ["get", "base"], 2.2]],
+            5, ["max", 1.2, ["*", ["get", "base"], MOBILE ? 0.35 : 0.55]],
+            6.5, ["*", ["get", "base"], MOBILE ? 0.6 : 1],
+            9, ["*", ["get", "base"], MOBILE ? 1.1 : 1.6],
+            12, ["*", ["get", "base"], MOBILE ? 1.7 : 2.2]],
           "circle-opacity": ["match", ["get", "band"], 0, 0.9, 3, 0.45, 0.7]
         }
       });
@@ -777,6 +792,7 @@
       map.addSource("cities", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({
         id: "ring-labels",
+        minzoom: MOBILE ? 24 : 0,
         type: "symbol",
         source: "ring-labels",
         layout: { "text-field": ["get", "label"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-anchor": "bottom", "text-offset": [0, -0.2] },
@@ -786,6 +802,7 @@
         id: "city-dots",
         type: "circle",
         source: "cities",
+        minzoom: MOBILE ? 7.6 : 0,
         filter: ["!=", ["get", "manaus"], true],
         paint: { "circle-radius": 2.5, "circle-opacity": 0.75 }
       });
@@ -793,6 +810,7 @@
         id: "cities",
         type: "symbol",
         source: "cities",
+        minzoom: MOBILE ? 7.6 : 0,
         filter: ["!=", ["get", "manaus"], true],
         layout: {
           "text-field": ["get", "nome"],
@@ -816,8 +834,9 @@
           "text-field": ["get", "nome"],
           "text-font": ["Noto Sans Bold"],
           "text-size": 14,
-          "text-anchor": "left",
-          "text-offset": [0.9, 0],
+          // embaixo do ponto: o selo dos sensores do centro fica em cima de Manaus e cobriria o nome ao lado
+          "text-anchor": "top",
+          "text-offset": [0, 1.3],
           "text-allow-overlap": true
         },
         paint: { "text-halo-width": 2 }
@@ -831,6 +850,7 @@
         id: "alert-labels",
         type: "symbol",
         source: "alert-fires",
+        filter: MOBILE ? ["==", ["get", "rank"], 0] : ["has", "rank"],
         layout: {
           "text-field": ["get", "label"],
           "text-font": ["Noto Sans Bold"],
@@ -848,17 +868,17 @@
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
         cluster: true,
-        clusterRadius: 34,
+        clusterRadius: MOBILE ? 46 : 34,
         clusterMaxZoom: 11,
         clusterProperties: { max: ["max", ["get", "pm25"]] }
       });
       map.addLayer({ id: "sensor-clusters", type: "circle", source: "sensors", filter: ["has", "point_count"],
-        paint: { "circle-radius": 16, "circle-color": sensorColor(["get", "max"]), "circle-stroke-width": 4, "circle-stroke-opacity": 0.55 } }, "alert-labels");
+        paint: { "circle-radius": MOBILE ? 13 : 16, "circle-color": sensorColor(["get", "max"]), "circle-stroke-width": 4, "circle-stroke-opacity": 0.55 } }, "alert-labels");
       map.addLayer({ id: "sensor-points", type: "circle", source: "sensors", filter: ["!", ["has", "point_count"]],
-        paint: { "circle-radius": 14, "circle-color": sensorColor(["get", "pm25"]), "circle-stroke-width": 2 } }, "alert-labels");
+        paint: { "circle-radius": MOBILE ? 11 : 14, "circle-color": sensorColor(["get", "pm25"]), "circle-stroke-width": 2 } }, "alert-labels");
       [["sensor-cluster-text", ["has", "point_count"], "max"], ["sensor-text", ["!", ["has", "point_count"]], "pm25"]].forEach(function (l) {
         map.addLayer({ id: l[0], type: "symbol", source: "sensors", filter: l[1],
-          layout: { "text-field": ["to-string", ["round", ["get", l[2]]]], "text-font": ["Noto Sans Bold"], "text-size": 11,
+          layout: { "text-field": ["to-string", ["round", ["get", l[2]]]], "text-font": ["Noto Sans Bold"], "text-size": MOBILE ? 10 : 11,
             "text-allow-overlap": true, "text-ignore-placement": true },
           paint: { "text-color": sensorTextColor(["get", l[2]]) } }, "alert-labels");
       });
@@ -1733,8 +1753,8 @@
     var chip = document.getElementById("alert-chip"), near = picked[0];
     chip.hidden = false;
     chip.style.setProperty("--level", "var(" + LEVEL_COLOR[level] + ")");
-    chip.textContent = level === "ok" ? "Nenhum foco a menos de 100 km (12 h)" :
-      "Foco ativo a " + Math.round(near.km) + " km de Manaus · " + state.data.municipios[near.f[3]].nome;
+    chip.textContent = level === "ok" ? (MOBILE ? "Sem focos a menos de 100 km" : "Nenhum foco a menos de 100 km (12 h)") :
+      "Foco ativo a " + Math.round(near.km) + " km" + (MOBILE ? "" : " de Manaus") + " · " + state.data.municipios[near.f[3]].nome;
     chip.onclick = function () {
       if (!prefs.fires) { prefs.fires = true; savePrefs(); applyLayers(); }
       if (level === "ok") { fitRegion(); return; }
