@@ -147,7 +147,8 @@
   .legend-fires { display: grid; gap: 6px; }
 
   .map-info {
-    position: absolute; right: 12px; bottom: 34px; z-index: 500;
+    /* acima dos créditos do mapa (o "i" e o texto ocupam os ~34 px de baixo), com folga */
+    position: absolute; right: 12px; bottom: 46px; z-index: 500;
     display: grid; gap: 8px; justify-items: end; max-width: min(300px, calc(100% - 24px));
   }
   .alert-chip {
@@ -455,7 +456,7 @@
     .layers { top: 46px; right: 8px; padding: 6px 8px; }
     .layers-body { gap: 6px; }
     .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: calc(100% - 16px); }
-    .map-info { right: 8px; bottom: 30px; max-width: 62%; }
+    .map-info { right: 8px; bottom: 46px; max-width: 62%; }
     .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .alert-chip::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
     .map-forecast { padding: 6px 10px; }
