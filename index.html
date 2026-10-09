@@ -435,6 +435,8 @@
     color: var(--muted);
   }
   .maplibregl-ctrl-attrib a { color: var(--muted); }
+  /* créditos do mapa: texto completo (exigido pela Esri e pelo OpenStreetMap), mas discreto */
+  .maplibregl-ctrl-attrib-inner { font-size: 11px; line-height: 1.35; }
 
   @media (max-width: 860px) {
     html, body { height: auto; }
@@ -472,6 +474,11 @@
     .legend-wind { font-size: 11px; }
     /* legenda aberta ocupa o pé do mapa: aviso e previsão saem até ela fechar */
     .map-wrap:has(#legend-box[open]) .map-info { display: none; }
+    /* créditos abertos: letra pequena, quebram em linhas no canto direito sem chegar ao botão da legenda */
+    .maplibregl-ctrl-attrib-inner { font-size: 10px; line-height: 1.3; }
+    /* a largura conta também o espaço do botão (i) e as margens internas (~36 px) */
+    .maplibregl-ctrl-attrib.maplibregl-compact-show { max-width: calc(100vw - 190px); }
+    .map-wrap:has(.maplibregl-compact-show) .map-info { display: none; }
     .map-info { right: 8px; bottom: 46px; max-width: 62%; }
     .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .alert-chip::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
