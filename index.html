@@ -519,7 +519,7 @@
     /* celular: painel compacto (cerca de metade da altura do mapa) */
     .layers { top: 46px; right: 8px; padding: 6px 10px; }
     .layers[open] { padding-bottom: 8px; width: min(232px, calc(100vw - 16px)); }
-    .layers-body { max-height: 50vh; max-height: 50svh; overflow-y: auto; overscroll-behavior: contain; margin-top: 2px; }
+    .layers-body { max-height: calc(max(420px, 72vh) - 215px); max-height: calc(max(420px, 72svh) - 215px); overflow-y: auto; overscroll-behavior: contain; margin-top: 2px; }
     .layers-group { margin: 6px 0 2px; font-size: 9px; }
     .layers-group:first-child { margin-top: 2px; }
     .switch-row { min-height: 32px; padding: 2px 6px; font-size: 13px; }
@@ -535,12 +535,14 @@
     .radio-row .radio { display: none; }
     .radio-row .swatch { margin: 0; width: 100%; height: 5px; }
     .radio-row:not(:has(.swatch))::after { content: ""; display: block; width: 100%; height: 5px; border-radius: 3px; background: var(--line); }
-    #overlay-ar .lbl, label[for="opt-sensors"] .lbl { display: none; }
-    #overlay-ar .lbl-short, label[for="opt-sensors"] .lbl-short { display: inline; }
+    #overlay-ar .lbl, label[for="opt-sensors"] .lbl, .legend .lbl { display: none; }
+    #overlay-ar .lbl-short, label[for="opt-sensors"] .lbl-short, .legend .lbl-short { display: inline; }
+    /* escala do ar na legenda estreita: só os extremos */
+    .legend .overlay-ticks span:not(:first-child):not(:last-child) { display: none; }
     /* "No mapa" repete o "Camadas" logo acima; "Cor de fundo" fica, separa as duas partes */
     .layers-group:first-child { display: none; }
     .switch-row { min-height: 30px; }
-    .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: min(230px, calc(100% - 16px)); }
+    .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: min(190px, calc(100% - 16px)); }
     .legend-body { gap: 5px; font-size: 12px; max-height: 40vh; max-height: 40svh; overflow-y: auto; overscroll-behavior: contain; }
     .legend-fires { grid-template-columns: auto auto; column-gap: 12px; row-gap: 3px; }
     .legend-fires .legend-title { grid-column: 1 / -1; }
@@ -556,7 +558,8 @@
     .legend-wind { font-size: 11px; }
     /* legenda aberta ocupa o pé do mapa: aviso e previsão saem até ela fechar */
     /* legenda ou camadas abertas ocupam a altura do mapa: aviso e previsão saem até elas fecharem */
-    .map-wrap:has(#legend-box[open]) .map-info, .map-wrap:has(#layers-box[open]) .map-info { display: none; }
+    /* legenda aberta (esquerda) e aviso/previsão (direita) lado a lado: o aviso usa o espaço que sobra */
+    .map-wrap:has(#legend-box[open]) .map-info { max-width: calc(100% - 214px); }
     /* créditos abertos: letra pequena, quebram em linhas no canto direito sem chegar ao botão da legenda */
     .maplibregl-ctrl-attrib-inner { font-size: 10px; line-height: 1.3; }
     /* a largura conta também o espaço do botão (i) e as margens internas (~36 px) */
@@ -651,10 +654,10 @@
       <div class="legend-body">
       <span class="legend-fires" id="legend-fires">
       <span class="legend-title">Foco detectado há</span>
-      <span class="legend-row"><span class="dot" style="background: var(--fire-new)"></span>menos de 6 h</span>
-      <span class="legend-row"><span class="dot" style="background: var(--fire-day)"></span>6 a 24 h</span>
-      <span class="legend-row"><span class="dot" style="background: var(--fire-old)"></span>24 a 48 h</span>
-      <span class="legend-row" id="legend-older" hidden><span class="dot" style="background: var(--fire-older)"></span>2 a 5 dias</span>
+      <span class="legend-row"><span class="dot" style="background: var(--fire-new)"></span><span class="lbl">menos de 6 h</span><span class="lbl-short">&lt; 6 h</span></span>
+      <span class="legend-row"><span class="dot" style="background: var(--fire-day)"></span><span class="lbl">6 a 24 h</span><span class="lbl-short">6–24 h</span></span>
+      <span class="legend-row"><span class="dot" style="background: var(--fire-old)"></span><span class="lbl">24 a 48 h</span><span class="lbl-short">24–48 h</span></span>
+      <span class="legend-row" id="legend-older" hidden><span class="dot" style="background: var(--fire-older)"></span><span class="lbl">2 a 5 dias</span><span class="lbl-short">2–5 dias</span></span>
       </span>
       <span class="legend-heat" id="legend-heat" hidden>
         <span class="legend-title">Concentração de focos</span>
@@ -668,7 +671,7 @@
         <span class="overlay-note" id="legend-overlay-note"></span>
       </span>
       <span class="legend-sensors" id="legend-sensors" hidden>
-        <span class="legend-title">Sensores · PM2.5 medido <span class="unit">(µg/m³)</span></span>
+        <span class="legend-title"><span class="lbl">Sensores · PM2.5 medido </span><span class="lbl-short">Sensores </span><span class="unit">(µg/m³)</span></span>
         <span class="sensor-scale" id="sensor-scale"></span>
         <span class="scale-ends"><span>bom</span><span>perigoso</span></span>
         <span class="overlay-note">Círculo com contorno largo: grupo de sensores, mostra o pior valor. Toque para aproximar.</span>
@@ -2098,7 +2101,7 @@
     chip.hidden = false;
     chip.style.setProperty("--level", "var(" + LEVEL_COLOR[level] + ")");
     chip.textContent = level === "ok" ? (MOBILE ? "Sem focos a menos de 100 km" : "Nenhum foco a menos de 100 km (12 h)") :
-      "Foco ativo a " + Math.round(near.km) + " km" + (MOBILE ? "" : " de Manaus") + " · " + state.data.municipios[near.f[3]].nome;
+      (MOBILE ? "Foco a " : "Foco ativo a ") + Math.round(near.km) + " km" + (MOBILE ? "" : " de Manaus") + " · " + state.data.municipios[near.f[3]].nome;
     chip.onclick = function () {
       if (!prefs.fires) { prefs.fires = true; savePrefs(); applyLayers(); }
       if (level === "ok") { fitRegion(); return; }
