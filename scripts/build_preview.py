@@ -3,7 +3,7 @@
 Cria <site>/og.jpg (1200 x 630) e preenche as etiquetas og:* de <site>/index.html.
 O WhatsApp não roda JavaScript: título, descrição e imagem precisam estar no HTML.
 
-    python3 scripts/build_preview.py _site https://usuario.github.io/radar-fumaca/
+    python3 scripts/build_preview.py _site https://radardafumaca.github.io/
 """
 import json
 import math
@@ -228,7 +228,7 @@ def preencher(html_path, site_url, titulo, descricao, versao):
 
 def main():
     site = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT
-    site_url = sys.argv[2] if len(sys.argv) > 2 else "https://andrecavalcantii.github.io/radar-fumaca/"
+    site_url = sys.argv[2] if len(sys.argv) > 2 else "https://radardafumaca.github.io/"
     if not site_url.endswith("/"):
         site_url += "/"
     r = resumo()
