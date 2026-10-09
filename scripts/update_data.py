@@ -286,6 +286,10 @@ def main():
     key = firms_key()
     window_hours = FIRMS_API_DAYS * 24 if key else 48
     cutoff = now - timedelta(hours=window_hours)
+    if key:
+        # a API conta dias de calendário em UTC: hoje e os 4 anteriores, desde a meia-noite
+        api_start = (now - timedelta(days=FIRMS_API_DAYS - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        cutoff = max(cutoff, api_start)
     municipios = Municipios(DATA / "municipios.json")
 
     focos = firms_focos(cutoff, key)
@@ -327,6 +331,8 @@ def main():
         "centro": MANAUS,
         "raio_km": RADIUS_KM,
         "janela_horas": window_hours,
+        # desde quando há dados de fato (para não contar como "sem focos" um dia que ficou de fora)
+        "inicio_em": cutoff.isoformat(timespec="minutes"),
         "satelites": fontes,
         "municipios": lista,
         # [lat, lon, minutos desde 1970 (UTC), índice do município, FRP em MW, índice do satélite]

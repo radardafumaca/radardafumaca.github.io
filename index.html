@@ -263,6 +263,25 @@
   .air-note { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
   .air-note strong { color: var(--ink); }
   .spark { margin-top: 14px; width: 100%; height: auto; display: block; }
+  .summary { background: var(--ground); }
+  .sum-date { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
+  .sum-date::before { content: "· "; }
+  .sum-lead { margin: 0; font: 500 17px/1.45 var(--font-body); max-width: 40ch; text-wrap: pretty; }
+  .sum-lead strong { font-weight: 600; }
+  .sum-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0 0; }
+  .sum-stats > div { display: grid; gap: 3px; align-content: start; }
+  .sum-stats dt { font-size: 12px; color: var(--muted); }
+  .sum-stats dd { margin: 0; font: 600 28px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+  .sum-stats dd small { font: 500 14px/1 var(--font-body); color: var(--muted); margin-left: 2px; }
+  .sum-sub { font: 12px/1.35 var(--font-data); color: var(--muted); }
+  .chip { display: inline-block; padding: 1px 6px; border-radius: 999px; font: 600 11px/1.5 var(--font-body); border: 1px solid currentColor; }
+  .chip.up { color: var(--aqi-bad); }
+  .chip.down { color: var(--aqi-good); }
+  .chip.same { color: var(--muted); }
+  #sum-chart svg { display: block; width: 100%; height: auto; margin-top: 18px; }
+  .sum-notes { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; font-size: 14px; color: var(--muted); }
+  .sum-notes strong { color: var(--ink); font-weight: 600; }
+  .sum-notes .fine { font-size: 12px; }
   .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 0; }
   .facts div { display: grid; gap: 2px; }
   .facts dt { font-size: 12px; color: var(--muted); }
@@ -419,6 +438,14 @@
   </div>
 
   <aside class="panel">
+    <section class="summary" aria-labelledby="sum-title">
+      <h2 id="sum-title">Resumo de hoje <span class="sum-date" id="sum-date"></span></h2>
+      <p class="sum-lead" id="sum-lead">Montando o resumo do dia…</p>
+      <dl class="sum-stats" id="sum-stats"></dl>
+      <div id="sum-chart"></div>
+      <ul class="sum-notes" id="sum-notes"></ul>
+    </section>
+
     <section aria-labelledby="air-title">
       <h2 id="air-title">O ar em Manaus agora</h2>
       <div id="air"><p class="hint">Buscando qualidade do ar…</p></div>
@@ -1236,6 +1263,159 @@
   }
 
   // ---------- carga ----------
+  // ---------- resumo do dia ----------
+  // Manaus fica em UTC−4 o ano todo (sem horário de verão): dia local = minutos UTC − 240.
+  var TZ_OFFSET_MIN = -240;
+  function localDay(minUtc) { return Math.floor((minUtc + TZ_OFFSET_MIN) / 1440); }
+  function localMinOfDay(minUtc) { return ((minUtc + TZ_OFFSET_MIN) % 1440 + 1440) % 1440; }
+  function hhmm(minOfDay) { var m = Math.floor(minOfDay); return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
+  var fmtLongDate = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Manaus", weekday: "long", day: "numeric", month: "long" });
+  var fmtWeekday = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC", weekday: "short" });
+  function dayLabel(dayIdx) { return fmtWeekday.format(new Date(dayIdx * 86400000)).replace(".", ""); }
+
+  function nearestCity(lon, lat) {
+    var best = null, bestD = Infinity;
+    cidades.forEach(function (c) { var d = distanceKm(lat, lon, c.lat, c.lon); if (d < bestD) { best = c; bestD = d; } });
+    return best;
+  }
+
+  function renderSummary() {
+    var nowMin = Date.now() / 60000, today = localDay(nowMin), nowMod = localMinOfDay(nowMin);
+    document.getElementById("sum-date").textContent = fmtLongDate.format(new Date());
+    var lead = [], stats = [], notes = [];
+
+    // focos
+    var f = null;
+    if (state.data) {
+      var perDay = {}, muni = {}, todayCount = 0, ydaySame = 0, nearest = null;
+      state.data.focos.forEach(function (x) {
+        var d = localDay(x[2]);
+        perDay[d] = (perDay[d] || 0) + 1;
+        if (d === today) {
+          todayCount++;
+          muni[x[3]] = (muni[x[3]] || 0) + 1;
+          var km = distanceKm(MANAUS[0], MANAUS[1], x[0], x[1]);
+          if (!nearest || km < nearest.km) nearest = { km: km, f: x };
+        } else if (d === today - 1 && localMinOfDay(x[2]) <= nowMod) ydaySame++;
+      });
+      f = { today: todayCount, ydaySame: ydaySame };
+      var chip = "", phrase;
+      if (ydaySame > 0) {
+        var pct = Math.round((todayCount - ydaySame) / ydaySame * 100);
+        if (Math.abs(pct) < 10) { chip = '<span class="chip same">parecido com ontem</span>'; phrase = "o número de focos está parecido com o de ontem"; }
+        else if (pct > 0) { chip = '<span class="chip up">+' + pct + "% que ontem</span>"; phrase = "há <strong>" + pct + "% mais focos</strong> que ontem no mesmo horário"; }
+        else { chip = '<span class="chip down">' + pct + "% que ontem</span>"; phrase = "há <strong>" + Math.abs(pct) + "% menos focos</strong> que ontem no mesmo horário"; }
+      } else phrase = todayCount ? "há focos hoje, e nenhum ontem até este horário" : "não há focos detectados hoje";
+      lead.push({ k: "focos", t: phrase });
+      stats.push('<div><dt>Focos hoje</dt><dd>' + fmtInt.format(todayCount) + '</dd><span class="sum-sub">' + chip +
+        (ydaySame ? " ontem até " + hhmm(nowMod) + ": " + fmtInt.format(ydaySame) : "") + "</span></div>");
+
+      var topIdx = Object.keys(muni).sort(function (a, b) { return muni[b] - muni[a]; })[0];
+      if (topIdx != null) notes.push("Mais focos hoje: <strong>" + state.data.municipios[topIdx].nome + "</strong> (" + fmtInt.format(muni[topIdx]) + ")");
+      if (nearest) notes.push("Foco mais próximo de Manaus hoje: <strong>" + Math.round(nearest.km) + " km</strong>, em " +
+        state.data.municipios[nearest.f[3]].nome + ", às " + hhmm(localMinOfDay(nearest.f[2])));
+
+      // gráfico: dias inteiros cobertos pelos dados + hoje até agora
+      var windowStart = state.data.inicio_em ? Date.parse(state.data.inicio_em) / 60000
+        : Date.parse(state.data.atualizado_em) / 60000 - state.data.janela_horas * 60;
+      var days = [];
+      for (var d = today - 6; d <= today; d++) if (d === today || d * 1440 - TZ_OFFSET_MIN >= windowStart) days.push(d);
+      renderDayChart(days.map(function (d) { return { d: d, n: perDay[d] || 0, today: d === today }; }), nowMod);
+    }
+
+    // ar em Manaus hoje
+    if (state.air) {
+      var times = state.air.hourly.time, vals = state.air.hourly.pm2_5, nowKey = state.air.current.time.slice(0, 13);
+      var todayKey = state.air.current.time.slice(0, 10), sum = 0, n = 0, above = 0, peak = null;
+      times.forEach(function (t, i) {
+        if (t.slice(0, 10) !== todayKey || t.slice(0, 13) > nowKey || vals[i] == null) return;
+        sum += vals[i]; n++;
+        if (vals[i] > OMS_PM25) above++;
+        if (!peak || vals[i] > peak.v) peak = { v: vals[i], h: t.slice(11, 16) };
+      });
+      if (n) {
+        var mean = sum / n, ratio = mean / OMS_PM25;
+        var airText = ratio >= 3 ? "o ar está <strong>muito carregado de fumaça</strong>" :
+          ratio >= 1.5 ? "o ar está <strong>com fumaça acima do recomendado</strong>" :
+          ratio >= 1 ? "o ar está um pouco acima do recomendado" : "o ar está dentro do recomendado";
+        lead.unshift({ k: "ar", t: airText + " (PM2.5 médio de " + mean.toFixed(0) + " µg/m³, " + ratio.toFixed(1).replace(".", ",") + "× a referência da OMS)" });
+        stats.push('<div><dt>PM2.5 médio hoje</dt><dd>' + mean.toFixed(0) + '<small>µg/m³</small></dd><span class="sum-sub">' +
+          ratio.toFixed(1).replace(".", ",") + "× a referência da OMS</span></div>");
+        stats.push('<div><dt>Horas acima de 15 µg/m³</dt><dd>' + above + "<small>de " + n + '</small></dd><span class="sum-sub">pico de ' +
+          peak.v.toFixed(0) + " às " + peak.h + "</span></div>");
+      }
+    }
+
+    // temperatura e umidade hoje
+    if (state.weather && state.weather.hourly.temperature_2m) {
+      var wt = state.weather.hourly.time, temp = state.weather.hourly.temperature_2m, hum = state.weather.hourly.relative_humidity_2m;
+      var wNow = state.weather.current.time.slice(0, 13), wDay = state.weather.current.time.slice(0, 10), tMax = null, hMin = null;
+      wt.forEach(function (t, i) {
+        if (t.slice(0, 10) !== wDay || t.slice(0, 13) > wNow) return;
+        if (temp[i] != null && (tMax == null || temp[i] > tMax)) tMax = temp[i];
+        if (hum[i] != null && (hMin == null || hum[i] < hMin)) hMin = hum[i];
+      });
+      if (tMax != null) stats.push('<div><dt>Temperatura máxima</dt><dd>' + tMax.toFixed(0) + '<small>°C</small></dd><span class="sum-sub">' +
+        (hMin != null ? "umidade mínima " + hMin.toFixed(0) + "%" : "") + "</span></div>");
+    }
+
+    // vento: de onde vem e se traz fumaça (focos das últimas 24 h)
+    if (state.wind && state.data) {
+      var minMin = nowMin - 24 * 60, total = 0, upwind = 0, ws = sectorOf(state.wind.from);
+      state.data.focos.forEach(function (x) {
+        if (x[2] < minMin) return;
+        total++;
+        if (sectorOf(bearing(MANAUS[0], MANAUS[1], x[0], x[1])) === ws) upwind++;
+      });
+      var share = total ? Math.round(upwind / total * 100) : 0;
+      lead.push({ k: "vento", t: "o vento vem do " + SECTOR_NAMES[ws] + (share >= 25
+        ? ", onde estão " + share + "% dos focos das últimas 24 h, e <strong>deve estar trazendo a fumaça</strong>"
+        : ", onde há poucos focos") });
+    }
+
+    // pior ponto de qualidade do ar na região agora
+    if (grid && grid.aqi && cidades.length) {
+      var worst = -1;
+      grid.aqi.forEach(function (v, i) { if (v != null && (worst < 0 || v > grid.aqi[worst])) worst = i; });
+      if (worst >= 0) {
+        var g = grid.grade, lon = g.lon0 + (worst % g.nx) * g.dlon, lat = g.lat0 + Math.floor(worst / g.nx) * g.dlat;
+        var city = nearestCity(lon, lat);
+        notes.push("Pior qualidade do ar na região agora: <strong>AQI " + Math.round(grid.aqi[worst]) + "</strong> (" +
+          aqiInfo(grid.aqi[worst])[1].toLowerCase() + "), perto de " + city.nome);
+      }
+    }
+
+    // frase-síntese: ar em Manaus, focos na região, vento
+    var byKey = {}; lead.forEach(function (l) { byKey[l.k] = l.t; });
+    var sentences = [];
+    if (byKey.ar) sentences.push("Em Manaus, " + byKey.ar + ".");
+    if (byKey.focos) sentences.push("Na região, " + byKey.focos + ".");
+    if (byKey.vento) sentences.push(byKey.vento.charAt(0).toUpperCase() + byKey.vento.slice(1) + ".");
+    if (sentences.length) document.getElementById("sum-lead").innerHTML = sentences.join(" ");
+    document.getElementById("sum-stats").innerHTML = stats.join("");
+    if (notes.length) notes.push('<span class="fine">Focos são detecções de satélite: um mesmo incêndio pode contar mais de uma vez. Valores de ar e clima são do modelo da Open-Meteo.</span>');
+    document.getElementById("sum-notes").innerHTML = notes.map(function (n) { return "<li>" + n + "</li>"; }).join("");
+  }
+
+  function renderDayChart(days, nowMod) {
+    var box = document.getElementById("sum-chart");
+    if (!days.length) { box.innerHTML = ""; return; }
+    var W = 360, H = 112, padT = 18, padB = 22, gap = 10;
+    var max = Math.max.apply(null, days.map(function (d) { return d.n; }).concat([1]));
+    var bw = (W - gap * (days.length - 1)) / days.length;
+    var ember = css("--ember"), muted = css("--muted"), ink = css("--ink"), line = css("--line");
+    var out = ['<line x1="0" x2="' + W + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" stroke="' + line + '"/>'];
+    days.forEach(function (d, i) {
+      var h = (H - padT - padB) * d.n / max, x = i * (bw + gap), y = H - padB - h;
+      out.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, h).toFixed(1) +
+        '" rx="2" fill="' + ember + '" fill-opacity="' + (d.today ? 1 : 0.4) + '"/>');
+      out.push('<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y - 5).toFixed(1) + '" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="' + ink + '">' + fmtInt.format(d.n) + "</text>");
+      out.push('<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="11" font-family="Public Sans, sans-serif" fill="' + (d.today ? ink : muted) + '"' +
+        (d.today ? ' font-weight="600"' : "") + ">" + (d.today ? "hoje" : dayLabel(d.d)) + "</text>");
+    });
+    box.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Focos por dia na região; hoje até ' + hhmm(nowMod) + '">' + out.join("") + "</svg>";
+  }
+
   function renderAll() {
     drawFires();
     drawCities();
@@ -1253,6 +1433,7 @@
 
   function onThemeChange() {
     setBaseLayers();
+    if (state.data) renderSummary();
     drawRings();
     wind.refresh();
     if (state.data) { drawRings(); renderAll(); }
@@ -1266,7 +1447,7 @@
       "&current=pm2_5,pm10,us_aqi&hourly=pm2_5&past_days=3&forecast_days=1")
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   var weatherReq = fetch("https://api.open-meteo.com/v1/forecast?" + q +
-      "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&hourly=wind_speed_10m,wind_direction_10m&past_days=1&forecast_days=1")
+      "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&past_days=1&forecast_days=1")
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   var dataReq = fetch("data/focos.json", { cache: "no-cache" })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
@@ -1295,7 +1476,7 @@
   }
 
   fetch("data/cidades.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function (list) { cidades = list; drawCities(); })
+    .then(function (list) { cidades = list; drawCities(); renderSummary(); })
     .catch(function () { document.getElementById("opt-cities").disabled = true; });
   function disableOption(el, why) { el.disabled = true; el.title = why; }
   fetch("data/grade.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -1306,6 +1487,7 @@
       if (d.superficie) mapReady.then(function () { wind.setData(d); });
       else disableOption(document.getElementById("opt-wind"), "Dados de vento indisponíveis no momento");
       overlay.show(prefs.overlay);
+      renderSummary();
     })
     .catch(function () {
       disableOption(document.getElementById("opt-wind"), "Dados de vento indisponíveis no momento");
@@ -1324,6 +1506,7 @@
     document.getElementById("stamp").textContent = "Focos da NASA FIRMS atualizados em " + fmtTime.format(updated) + " (hora de Manaus)";
     drawRings();
     renderAll();
+    renderSummary();
   }, function () {
     document.getElementById("stamp").textContent = "Focos indisponíveis";
     document.getElementById("munis").innerHTML = '<li class="error">Não foi possível carregar data/focos.json. Rode scripts/update_data.py e abra a página por um servidor (python3 -m http.server).</li>';
@@ -1334,6 +1517,7 @@
   var weatherDone = weatherReq.then(function (weather) {
     state.weather = weather;
     state.wind = averageWind(weather);
+    renderSummary();
     if (state.data) { renderCompass(); renderMunicipios(); }
   }, function () {
     document.getElementById("wind-text").textContent = "Não foi possível buscar o vento na Open-Meteo. Recarregue a página em alguns minutos.";
@@ -1342,6 +1526,7 @@
   Promise.allSettled([airReq, weatherDone]).then(function (res) {
     if (res[0].status === "fulfilled") {
       state.air = res[0].value;
+      renderSummary();
       renderAir(state.air, state.weather);
     } else {
       document.getElementById("air").innerHTML = '<p class="error">Não foi possível buscar a qualidade do ar na Open-Meteo. Recarregue a página em alguns minutos.</p>';
