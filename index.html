@@ -263,6 +263,42 @@
   .air-note { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
   .air-note strong { color: var(--ink); }
   .spark { margin-top: 14px; width: 100%; height: auto; display: block; }
+  .alert-status { display: grid; gap: 4px; padding: 12px 14px; border-radius: 6px; border-left: 4px solid currentColor; background: var(--ground); }
+  .alert-status.level-alerta { color: var(--aqi-bad); }
+  .alert-status.level-atencao { color: var(--aqi-sensitive); }
+  .alert-status.level-ok { color: var(--aqi-good); }
+  .alert-answer { font: 700 24px/1.1 var(--font-display); text-transform: uppercase; letter-spacing: 0.02em; }
+  .alert-detail { color: var(--ink); font-size: 15px; line-height: 1.4; }
+  .alert-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 2px; }
+  .alert-item {
+    width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline;
+    padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  }
+  .alert-item:hover { background: var(--ground); }
+  .alert-item:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .alert-km { font: 600 18px/1 var(--font-display); font-variant-numeric: tabular-nums; min-width: 52px; }
+  .alert-where { font-size: 14px; }
+  .alert-where span { color: var(--muted); }
+  .alert-when { font: 12px/1 var(--font-data); color: var(--muted); }
+  .alert-meta { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .alert-meta strong { color: var(--ink); font-weight: 600; }
+
+  .fc-lead { margin: 0 0 12px; font-size: 15px; line-height: 1.45; }
+  .fc { list-style: none; margin: 0; padding: 0; display: grid; }
+  .fc li {
+    display: grid; grid-template-columns: 52px 24px 1fr auto; gap: 2px 10px; align-items: center;
+    padding: 9px 0; border-top: 1px solid var(--line);
+  }
+  .fc li:first-child { border-top: 0; }
+  .fc-day { font-weight: 600; }
+  .fc-icon { width: 22px; height: 22px; color: var(--muted); }
+  .fc-desc { font-size: 14px; }
+  .fc-temp { font: 600 18px/1 var(--font-display); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .fc-temp small { font: 500 14px/1 var(--font-display); color: var(--muted); }
+  .fc-meta { grid-column: 3 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; font: 12px/1.4 var(--font-data); color: var(--muted); }
+  .fc-meta .rain { color: var(--ink); }
+  .fc-smoke::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dot, var(--muted)); }
+  .fc-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
   .summary { background: var(--ground); }
   .sum-date { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
   .sum-date::before { content: "· "; }
@@ -438,12 +474,26 @@
   </div>
 
   <aside class="panel">
+    <section class="alert" aria-labelledby="alert-title">
+      <h2 id="alert-title">Incêndios perto de Manaus</h2>
+      <div class="alert-status" id="alert-status"><p class="hint">Verificando os focos…</p></div>
+      <ul class="alert-list" id="alert-list"></ul>
+      <p class="alert-meta" id="alert-meta"></p>
+    </section>
+
     <section class="summary" aria-labelledby="sum-title">
       <h2 id="sum-title">Resumo de hoje <span class="sum-date" id="sum-date"></span></h2>
       <p class="sum-lead" id="sum-lead">Montando o resumo do dia…</p>
       <dl class="sum-stats" id="sum-stats"></dl>
       <div id="sum-chart"></div>
       <ul class="sum-notes" id="sum-notes"></ul>
+    </section>
+
+    <section aria-labelledby="fc-title">
+      <h2 id="fc-title">Previsão para Manaus</h2>
+      <p class="fc-lead" id="fc-lead">Buscando a previsão…</p>
+      <ol class="fc" id="fc-list"></ol>
+      <p class="fc-note">Fumaça prevista: PM2.5 médio do dia segundo o modelo CAMS. Tempo: modelo meteorológico da Open-Meteo.</p>
     </section>
 
     <section aria-labelledby="air-title">
@@ -1222,7 +1272,9 @@
     var box = document.getElementById("air");
     var pm = air.current.pm2_5, aqi = air.current.us_aqi;
     var info = aqiInfo(aqi);
-    var times = air.hourly.time, values = air.hourly.pm2_5;
+    var endOfToday = air.current.time.slice(0, 10) + "T23:00";
+    var keep = air.hourly.time.filter(function (t) { return t <= endOfToday; }).length;
+    var times = air.hourly.time.slice(0, keep), values = air.hourly.pm2_5.slice(0, keep);
     var nowIdx = times.indexOf(air.current.time.slice(0, 13) + ":00");
     if (nowIdx < 0) nowIdx = values.length - 1;
     var ratio = pm / OMS_PM25;
@@ -1397,6 +1449,127 @@
     document.getElementById("sum-notes").innerHTML = notes.map(function (n) { return "<li>" + n + "</li>"; }).join("");
   }
 
+  // ---------- incêndios perto de Manaus ----------
+  var MANAUS_IBGE = "1302603";
+  function renderFireAlert() {
+    if (!state.data) return;
+    var nowMin = Date.now() / 60000, today = localDay(nowMin);
+    var recent = [], inManaus = 0, lastSeen = 0;
+    state.data.focos.forEach(function (f) {
+      if (f[2] > lastSeen) lastSeen = f[2];
+      if (f[2] >= nowMin - 24 * 60 && state.data.municipios[f[3]].codigo_ibge === MANAUS_IBGE) inManaus++;
+      if (f[2] >= nowMin - 12 * 60) recent.push({ f: f, km: distanceKm(MANAUS[0], MANAUS[1], f[0], f[1]) });
+    });
+    recent.sort(function (a, b) { return a.km - b.km; });
+    // vários satélites veem o mesmo fogo: pontos a menos de 5 km de um já listado contam como o mesmo
+    var picked = [];
+    recent.forEach(function (r) {
+      if (picked.length >= 5) return;
+      if (picked.some(function (p) { return distanceKm(p.f[0], p.f[1], r.f[0], r.f[1]) < 5; })) return;
+      picked.push(r);
+    });
+    var near = picked[0], level, answer, detail;
+    if (near && near.km <= 50) { level = "alerta"; answer = "Sim"; detail = "Há focos ativos a <strong>" + Math.round(near.km) + " km</strong> de Manaus nas últimas 12 h."; }
+    else if (near && near.km <= 100) { level = "atencao"; answer = "Atenção"; detail = "O foco ativo mais próximo está a <strong>" + Math.round(near.km) + " km</strong> de Manaus (últimas 12 h)."; }
+    else { level = "ok"; answer = "Não"; detail = "Nenhum foco a menos de 100 km de Manaus nas últimas 12 h."; }
+    var box = document.getElementById("alert-status");
+    box.className = "alert-status level-" + level;
+    box.innerHTML = '<span class="alert-answer">' + answer + '</span><span class="alert-detail">' + detail + "</span>";
+
+    var when = function (min) { return (localDay(min) === today ? "" : localDay(min) === today - 1 ? "ontem " : "") + hhmm(localMinOfDay(min)); };
+    var ul = document.getElementById("alert-list");
+    ul.innerHTML = "";
+    picked.forEach(function (r, i) {
+      var f = r.f, li = document.createElement("li"), btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "alert-item";
+      btn.id = "alert-" + i;
+      btn.innerHTML = '<span class="alert-km">' + Math.round(r.km) + ' km</span><span class="alert-where"></span><span class="alert-when">' + when(f[2]) + "</span>";
+      btn.querySelector(".alert-where").innerHTML = "a " + SECTOR_NAMES[sectorOf(bearing(MANAUS[0], MANAUS[1], f[0], f[1]))] + " <span>· " + state.data.municipios[f[3]].nome + "</span>";
+      btn.addEventListener("click", function () {
+        map.flyTo({ center: [f[1], f[0]], zoom: 11, duration: reducedMotion() ? 0 : 900 });
+        popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
+        if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
+      });
+      li.appendChild(btn);
+      ul.appendChild(li);
+    });
+    document.getElementById("alert-meta").innerHTML =
+      "Dentro do município de Manaus: <strong>" + fmtInt.format(inManaus) + (inManaus === 1 ? " foco" : " focos") + "</strong> nas últimas 24 h. " +
+      (lastSeen ? "Última detecção dos satélites: " + (localDay(lastSeen) === today ? "hoje às " : "") + when(lastSeen).replace("ontem ", "ontem às ") + ". " : "") +
+      "Os satélites passam algumas vezes por dia e não veem fogo pequeno ou sob nuvens: não ver foco não garante que não há fogo. " +
+      "<strong>Em caso de incêndio, ligue 193</strong> (Corpo de Bombeiros).";
+  }
+
+  // ---------- previsão do tempo ----------
+  var WMO = [
+    [[0], "Céu limpo", "sol"], [[1], "Poucas nuvens", "sol"], [[2], "Parcialmente nublado", "nuvem"], [[3], "Nublado", "nuvem"],
+    [[45, 48], "Névoa", "nevoa"], [[51, 53, 55, 56, 57], "Garoa", "chuva"], [[61], "Chuva fraca", "chuva"], [[63], "Chuva", "chuva"],
+    [[65, 66, 67], "Chuva forte", "chuva"], [[80], "Pancadas de chuva", "chuva"], [[81, 82], "Pancadas fortes", "chuva"], [[95, 96, 99], "Trovoadas", "raio"]
+  ];
+  var ICONS = {
+    sol: '<circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+    nuvem: '<path d="M7 18h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.5A3.3 3.3 0 0 0 7 18z"/>',
+    chuva: '<path d="M7 14.5h10.5a3.7 3.7 0 0 0 .4-7.4 5.6 5.6 0 0 0-10.8 1.4A3 3 0 0 0 7 14.5z"/><path d="M8.5 17.5l-1 3M12.5 17.5l-1 3M16.5 17.5l-1 3"/>',
+    raio: '<path d="M7 14.5h10.5a3.7 3.7 0 0 0 .4-7.4 5.6 5.6 0 0 0-10.8 1.4A3 3 0 0 0 7 14.5z"/><path d="M12.5 15l-2 3.5h3l-2 3.5"/>',
+    nevoa: '<path d="M4 9h16M6 13h12M4 17h16"/>'
+  };
+  function weatherOf(code) {
+    for (var i = 0; i < WMO.length; i++) if (WMO[i][0].indexOf(code) >= 0) return WMO[i];
+    return [[], "—", "nuvem"];
+  }
+  var fmtFcDay = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC", weekday: "short" });
+  var fmtFcLong = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC", weekday: "long" });
+
+  function renderForecast() {
+    if (!state.weather || !state.weather.daily) return;
+    var d = state.weather.daily, todayKey = state.weather.current.time.slice(0, 10);
+    // PM2.5 médio previsto de cada dia, a partir da previsão hora a hora do CAMS
+    var smoke = {};
+    if (state.air) state.air.hourly.time.forEach(function (t, i) {
+      var v = state.air.hourly.pm2_5[i];
+      if (v == null) return;
+      var k = t.slice(0, 10);
+      smoke[k] = smoke[k] || [0, 0];
+      smoke[k][0] += v; smoke[k][1]++;
+    });
+    var days = [];
+    d.time.forEach(function (t, i) { if (t >= todayKey) days.push(i); });
+    var rows = days.map(function (i) {
+      var t = d.time[i], w = weatherOf(d.weather_code[i]), rain = d.precipitation_sum[i], prob = d.precipitation_probability_max[i];
+      var label = t === todayKey ? "Hoje" : fmtFcDay.format(new Date(t + "T12:00Z")).replace(".", "");
+      label = label.charAt(0).toUpperCase() + label.slice(1);
+      var sm = smoke[t] && smoke[t][1] >= 12 ? smoke[t][0] / smoke[t][1] : null;
+      var meta = [];
+      meta.push('<span class="' + (rain >= 1 ? "rain" : "") + '">chuva ' + (rain != null ? rain.toFixed(rain < 10 ? 1 : 0).replace(".", ",") : "—") + " mm" + (prob != null ? " (" + prob + "%)" : "") + "</span>");
+      if (sm != null) meta.push('<span class="fc-smoke" style="--dot: var(' + aqiInfo(pm25ToAqi(sm))[2] + ')">fumaça ' + sm.toFixed(0) + " µg/m³</span>");
+      if (d.wind_direction_10m_dominant[i] != null) meta.push("vento do " + SECTOR_NAMES[sectorOf(d.wind_direction_10m_dominant[i])]);
+      return '<li><span class="fc-day">' + label + '</span><svg class="fc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        ICONS[w[2]] + '</svg><span class="fc-desc">' + w[1] + '</span><span class="fc-temp">' + Math.round(d.temperature_2m_max[i]) + "°<small> / " +
+        Math.round(d.temperature_2m_min[i]) + '°</small></span><span class="fc-meta">' + meta.join("") + "</span></li>";
+    });
+    document.getElementById("fc-list").innerHTML = rows.join("");
+
+    // frase: a chuva é o que mais ajuda a limpar a fumaça
+    var lead = "", future = days.filter(function (i) { return d.time[i] > todayKey; });
+    var wet = future.filter(function (i) { return d.precipitation_sum[i] >= 5; })[0];
+    var someRain = future.filter(function (i) { return d.precipitation_sum[i] >= 1; })[0];
+    var dayName = function (i) { return fmtFcLong.format(new Date(d.time[i] + "T12:00Z")); };
+    if (wet != null) lead = "<strong>Chuva prevista para " + dayName(wet) + "</strong> (" + d.precipitation_sum[wet].toFixed(0) + " mm): costuma ajudar a limpar o ar e a conter o fogo.";
+    else if (someRain != null) lead = "Só chuva fraca prevista (" + dayName(someRain) + ", " + d.precipitation_sum[someRain].toFixed(1).replace(".", ",") + " mm): pouco para limpar o ar.";
+    else lead = "<strong>Sem chuva prevista</strong> nos próximos dias: a fumaça tende a continuar enquanto houver focos.";
+    var tomorrow = future[0], smT = tomorrow != null && smoke[d.time[tomorrow]] ? smoke[d.time[tomorrow]][0] / smoke[d.time[tomorrow]][1] : null;
+    if (smT != null) lead += " Para amanhã, o modelo prevê PM2.5 médio de " + smT.toFixed(0) + " µg/m³ (" + (smT / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência da OMS).";
+    document.getElementById("fc-lead").innerHTML = lead;
+  }
+
+  // AQI americano a partir do PM2.5 (faixas da EPA), só para colorir a fumaça prevista
+  function pm25ToAqi(c) {
+    var bp = [[0, 9, 0, 50], [9.1, 35.4, 51, 100], [35.5, 55.4, 101, 150], [55.5, 125.4, 151, 200], [125.5, 225.4, 201, 300], [225.5, 500, 301, 500]];
+    for (var i = 0; i < bp.length; i++) if (c <= bp[i][1]) return bp[i][2] + (c - bp[i][0]) * (bp[i][3] - bp[i][2]) / (bp[i][1] - bp[i][0]);
+    return 500;
+  }
+
   function renderDayChart(days, nowMod) {
     var box = document.getElementById("sum-chart");
     if (!days.length) { box.innerHTML = ""; return; }
@@ -1444,10 +1617,12 @@
 
   var q = "latitude=" + MANAUS[0] + "&longitude=" + MANAUS[1] + "&timezone=America%2FManaus";
   var airReq = fetch("https://air-quality-api.open-meteo.com/v1/air-quality?" + q +
-      "&current=pm2_5,pm10,us_aqi&hourly=pm2_5&past_days=3&forecast_days=1")
+      "&current=pm2_5,pm10,us_aqi&hourly=pm2_5&past_days=3&forecast_days=5")
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   var weatherReq = fetch("https://api.open-meteo.com/v1/forecast?" + q +
-      "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&past_days=1&forecast_days=1")
+      "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m" +
+      "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_direction_10m_dominant,wind_speed_10m_max" +
+      "&past_days=1&forecast_days=5")
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   var dataReq = fetch("data/focos.json", { cache: "no-cache" })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
@@ -1507,6 +1682,7 @@
     drawRings();
     renderAll();
     renderSummary();
+    renderFireAlert();
   }, function () {
     document.getElementById("stamp").textContent = "Focos indisponíveis";
     document.getElementById("munis").innerHTML = '<li class="error">Não foi possível carregar data/focos.json. Rode scripts/update_data.py e abra a página por um servidor (python3 -m http.server).</li>';
@@ -1518,6 +1694,7 @@
     state.weather = weather;
     state.wind = averageWind(weather);
     renderSummary();
+    renderForecast();
     if (state.data) { renderCompass(); renderMunicipios(); }
   }, function () {
     document.getElementById("wind-text").textContent = "Não foi possível buscar o vento na Open-Meteo. Recarregue a página em alguns minutos.";
@@ -1527,6 +1704,7 @@
     if (res[0].status === "fulfilled") {
       state.air = res[0].value;
       renderSummary();
+      renderForecast();
       renderAir(state.air, state.weather);
     } else {
       document.getElementById("air").innerHTML = '<p class="error">Não foi possível buscar a qualidade do ar na Open-Meteo. Recarregue a página em alguns minutos.</p>';
