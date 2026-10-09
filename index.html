@@ -501,10 +501,14 @@
   .maplibregl-ctrl-group button:focus-visible { outline: 2px solid var(--ember); outline-offset: -2px; box-shadow: none; }
   .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter); }
   .reset-view { display: flex; align-items: center; justify-content: center; }
+  /* cartão preso ao ponto clicado (dentro do balão do MapLibre, sem o fundo e a seta dele) */
+  .info-pop { z-index: 600; }
+  .info-pop .maplibregl-popup-content { padding: 0; background: transparent; box-shadow: none; border-radius: 0; }
+  .info-pop .maplibregl-popup-tip { display: none; }
   .info-card {
-    position: absolute; z-index: 600; top: 12px; left: 60px; width: 300px; max-width: calc(100% - 72px);
-    padding: 14px 16px 14px; background: var(--surface); color: var(--ink);
-    border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+    position: relative; width: 300px; max-width: calc(100vw - 32px);
+    padding: 14px 16px 14px; background: var(--surface); color: var(--ink); font: 14px/1.45 var(--font-body);
+    border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.22);
   }
   .info-close {
     position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; display: grid; place-items: center;
@@ -604,11 +608,9 @@
     .maplibregl-ctrl-attrib.maplibregl-compact-show { max-width: calc(100vw - 190px); }
     .map-wrap:has(.maplibregl-compact-show) .map-info { display: none; }
     .map-info { right: 8px; bottom: 46px; max-width: 62%; }
-    .info-card {
-      top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none; max-height: 70%; overflow-y: auto;
-      border-radius: 14px 14px 0 0; border-bottom: 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-      box-shadow: 0 -6px 24px rgb(0 0 0 / 0.2);
-    }
+    .info-card { width: min(300px, calc(100vw - 32px)); padding: 12px 14px; }
+    .info-title { font-size: 16px; }
+    .info-value b { font-size: 34px; }
     .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .alert-chip::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
     .map-forecast { padding: 6px 10px; }
@@ -685,12 +687,6 @@
         <p class="layers-note" id="layers-note" role="status" hidden></p>
       </div>
     </details>
-    <aside class="info-card" id="info-card" aria-label="Detalhes do ponto selecionado" hidden>
-      <button type="button" class="info-close" id="info-close" aria-label="Fechar detalhes">
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      </button>
-      <div id="info-body" aria-live="polite"></div>
-    </aside>
     <div class="map-info">
       <button type="button" class="alert-chip" id="alert-chip" hidden></button>
       <details class="map-forecast collapsible" id="map-fc" hidden>
@@ -1619,30 +1615,39 @@
       '<p class="info-note">Detecção por satélite (NASA FIRMS): o mesmo fogo pode ser visto por mais de um satélite. Em caso de incêndio, ligue 193.</p>';
   }
 
-  // ---------- cartão de detalhes (no lugar do balão sobre o mapa) ----------
-  var infoCard = document.getElementById("info-card"), infoBody = document.getElementById("info-body"), selMarker = null;
+  // ---------- cartão de detalhes, preso ao ponto clicado ----------
+  var infoPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: "none", offset: 20, className: "info-pop", focusAfterOpen: false });
+  var selMarker = null;
   function showInfo(lngLat, html) {
-    infoBody.innerHTML = html;
-    infoCard.hidden = false;
-    infoCard.scrollTop = 0;
+    var card = document.createElement("div");
+    card.className = "info-card";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", "Detalhes do ponto selecionado");
+    card.innerHTML = '<button type="button" class="info-close" aria-label="Fechar detalhes">' +
+      '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>' + html;
+    card.querySelector(".info-close").addEventListener("click", hideInfo);
     if (!selMarker) {
       var el = document.createElement("div");
       el.className = "sel-ring";
       selMarker = new maplibregl.Marker({ element: el });
     }
     selMarker.setLngLat(lngLat).addTo(map);
-    // no celular o cartão cobre a parte de baixo: o ponto sobe para a área livre
-    if (MOBILE) {
-      var pt = map.project(lngLat), h = map.getContainer().clientHeight, free = h - infoCard.offsetHeight;
-      if (pt.y > free - 40) map.easeTo({ center: lngLat, offset: [0, -(h - free / 2) + h / 2], duration: reducedMotion() ? 0 : 400 });
-    }
+    infoPopup.setLngLat(lngLat).setDOMContent(card).addTo(map);
+    // se o cartão não couber na tela, o mapa anda o necessário para ele ficar inteiro
+    requestAnimationFrame(function () {
+      var c = map.getContainer().getBoundingClientRect(), r = card.getBoundingClientRect(), m = 12, dx = 0, dy = 0;
+      if (r.left < c.left + m) dx = r.left - c.left - m;
+      else if (r.right > c.right - m) dx = r.right - c.right + m;
+      if (r.top < c.top + m) dy = r.top - c.top - m;
+      else if (r.bottom > c.bottom - m) dy = r.bottom - c.bottom + m;
+      if (dx || dy) map.panBy([dx, dy], { duration: reducedMotion() ? 0 : 300 });
+    });
   }
   function hideInfo() {
-    infoCard.hidden = true;
+    infoPopup.remove();
     if (selMarker) selMarker.remove();
   }
-  document.getElementById("info-close").addEventListener("click", hideInfo);
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !infoCard.hidden) hideInfo(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && infoPopup.isOpen()) hideInfo(); });
   // quem ainda chama "popup" (lista de incêndios, aviso do mapa, focos desligados) usa o cartão
   var popup = { remove: hideInfo };
 
