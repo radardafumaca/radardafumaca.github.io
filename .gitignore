@@ -2,4 +2,4 @@
 __pycache__/
 .env
 data/focos.json
-data/vento.json
+data/grade.json

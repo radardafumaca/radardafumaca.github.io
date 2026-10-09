@@ -38,8 +38,8 @@ jobs:
           mkdir -p _site/data
           cp index.html _site/
           cp data/focos.json data/cidades.json _site/data/
-          # a grade de vento é opcional: se a Open-Meteo falhar, o site sai sem ela
-          if [ -f data/vento.json ]; then cp data/vento.json _site/data/; fi
+          # a grade (vento, temperatura, ar) é opcional: se a Open-Meteo falhar, o site sai sem ela
+          if [ -f data/grade.json ]; then cp data/grade.json _site/data/; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
