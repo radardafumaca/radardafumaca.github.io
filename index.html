@@ -279,6 +279,7 @@
   .radio-row[aria-pressed="true"] .radio::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ember); }
   .radio-row:disabled { color: var(--muted); cursor: not-allowed; opacity: 0.55; }
   .swatch { margin-left: auto; width: 46px; height: 8px; border-radius: 4px; }
+  .lbl-short { display: none; }
   .swatch-temp { background: linear-gradient(90deg, #2c7bb6, #00a6ca, #7fd3a0, #f4ec7a, #f9b44c, #ee6a26, #c81e1e); }
   .swatch-air { background: linear-gradient(90deg, #40c057, #94d82d, #fcc419, #ff922b, #f03e3e, #ae3ec9, #862e3a); }
   .layers-note { text-align: left; margin-top: 6px; }
@@ -514,9 +515,29 @@
     .window button { padding: 6px 9px; font-size: 12px; }
     .fire-pulse { width: 12px; height: 12px; border-width: 1.5px; }
     .fire-pulse::after { border-width: 1.5px; }
-    .layers { top: 46px; right: 8px; padding: 6px 10px; width: min(252px, calc(100vw - 16px)); }
-    .layers-body { max-height: 55vh; max-height: 55svh; overflow-y: auto; overscroll-behavior: contain; }
-    .switch-row, .radio-row { min-height: 38px; }
+    /* celular: painel compacto (cerca de metade da altura do mapa) */
+    .layers { top: 46px; right: 8px; padding: 6px 10px 8px; width: min(232px, calc(100vw - 16px)); }
+    .layers-body { max-height: 50vh; max-height: 50svh; overflow-y: auto; overscroll-behavior: contain; margin-top: 2px; }
+    .layers-group { margin: 6px 0 2px; font-size: 9px; }
+    .layers-group:first-child { margin-top: 2px; }
+    .switch-row { min-height: 32px; padding: 2px 6px; font-size: 13px; }
+    .sub-option { margin-bottom: 4px; }
+    .sub-option .seg button { padding: 5px 6px; font-size: 11px; }
+    /* cor de fundo: uma linha de três botões, com a faixa de cores embaixo */
+    .radio-list { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .radio-row {
+      flex-direction: column; justify-content: center; gap: 4px; min-height: 0; margin: 0; padding: 6px 4px;
+      border: 1.5px solid var(--line); font-size: 11px; text-align: center;
+    }
+    .radio-row[aria-pressed="true"] { border-color: var(--ember); background: var(--ground); font-weight: 600; }
+    .radio-row .radio { display: none; }
+    .radio-row .swatch { margin: 0; width: 100%; height: 5px; }
+    .radio-row:not(:has(.swatch))::after { content: ""; display: block; width: 100%; height: 5px; border-radius: 3px; background: var(--line); }
+    #overlay-ar .lbl, label[for="opt-sensors"] .lbl { display: none; }
+    #overlay-ar .lbl-short, label[for="opt-sensors"] .lbl-short { display: inline; }
+    /* "No mapa" repete o "Camadas" logo acima; "Cor de fundo" fica, separa as duas partes */
+    .layers-group:first-child { display: none; }
+    .switch-row { min-height: 30px; }
     .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: min(230px, calc(100% - 16px)); }
     .legend-body { gap: 5px; font-size: 12px; max-height: 40vh; max-height: 40svh; overflow-y: auto; overscroll-behavior: contain; }
     .legend-fires { grid-template-columns: auto auto; column-gap: 12px; row-gap: 3px; }
@@ -589,7 +610,7 @@
           </div>
         </div>
         <label class="switch-row" for="opt-sensors">
-          <span>Sensores de qualidade do ar</span>
+          <span><span class="lbl">Sensores de qualidade do ar</span><span class="lbl-short">Sensores do ar</span></span>
           <input type="checkbox" class="switch" role="switch" id="opt-sensors" checked>
         </label>
         <label class="switch-row" for="opt-wind">
@@ -609,9 +630,9 @@
 
         <p class="layers-group">Cor de fundo do mapa</p>
         <div class="radio-list" role="group" aria-label="Dado em cores no fundo do mapa">
-          <button type="button" class="radio-row" id="overlay-nenhum" data-overlay="nenhum" aria-pressed="true"><span class="radio"></span>Nenhuma</button>
-          <button type="button" class="radio-row" id="overlay-temperatura" data-overlay="temperatura" aria-pressed="false"><span class="radio"></span>Temperatura<span class="swatch swatch-temp"></span></button>
-          <button type="button" class="radio-row" id="overlay-ar" data-overlay="ar" aria-pressed="false"><span class="radio"></span>Qualidade do ar<span class="swatch swatch-air"></span></button>
+          <button type="button" class="radio-row" id="overlay-nenhum" data-overlay="nenhum" aria-pressed="true"><span class="radio"></span><span class="lbl">Nenhuma</span></button>
+          <button type="button" class="radio-row" id="overlay-temperatura" data-overlay="temperatura" aria-pressed="false"><span class="radio"></span><span class="lbl">Temperatura</span><span class="swatch swatch-temp"></span></button>
+          <button type="button" class="radio-row" id="overlay-ar" data-overlay="ar" aria-pressed="false"><span class="radio"></span><span class="lbl">Qualidade do ar</span><span class="lbl-short">Ar (AQI)</span><span class="swatch swatch-air"></span></button>
         </div>
         <p class="layers-note" id="layers-note" role="status" hidden></p>
       </div>
