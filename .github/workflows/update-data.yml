@@ -42,12 +42,18 @@ jobs:
           curl -sfL --retry 3 "$site/sensores.json" -o data/sensores.prev.json || true
           curl -sfL --retry 5 "$site/historico.json" -o data/historico.prev.json || true
           curl -sfL --retry 3 "$site/bairros.json" -o data/bairros.prev.json || true
+          curl -sfL --retry 5 "$site/anos.json" -o data/anos.prev.json || true
       - name: Baixar focos
         run: python scripts/update_data.py
         env:
           # Opcional: sem o secret, o script usa os arquivos abertos de 48 h.
           FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
           PURPLEAIR_KEY: ${{ secrets.PURPLEAIR_KEY }}
+      # Focos do mês comparados com os mesmos dias dos anos anteriores (arquivo baixado uma vez por mês).
+      - name: Comparar com outros anos
+        run: python scripts/anos.py || echo "comparação não atualizada; o site segue"
+        env:
+          FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
       - name: Montar o site
         run: |
           mkdir -p _site/data
@@ -58,6 +64,7 @@ jobs:
           if [ -f data/sensores.json ]; then cp data/sensores.json _site/data/; fi
           if [ -f data/historico.json ]; then cp data/historico.json _site/data/; fi
           if [ -f data/bairros.json ]; then cp data/bairros.json _site/data/; fi
+          if [ -f data/anos.json ]; then cp data/anos.json _site/data/; fi
           # para buscadores: o que pode ser indexado e quando a página mudou
           base="${{ steps.pages.outputs.base_url }}/"
           printf 'User-agent: *\nAllow: /\nSitemap: %ssitemap.xml\n' "$base" > _site/robots.txt

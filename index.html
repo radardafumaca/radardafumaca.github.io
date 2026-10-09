@@ -445,6 +445,12 @@
   .sum-notes { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; font-size: 14px; color: var(--muted); }
   .sum-notes strong { color: var(--ink); font-weight: 600; }
   .sum-notes .fine { font-size: 12px; }
+  .years { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .years-title { margin: 0 0 8px; font: 600 11px/1 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .years-lead { margin: 0; font-size: 15px; line-height: 1.45; }
+  .years-lead strong { font-weight: 600; }
+  #years-chart svg { display: block; width: 100%; height: auto; margin-top: 12px; }
+  .years-note { margin: 8px 0 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
   .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 0; }
   .facts div { display: grid; gap: 2px; }
   .facts dt { font-size: 12px; color: var(--muted); }
@@ -730,6 +736,12 @@
       <dl class="sum-stats" id="sum-stats"></dl>
       <div id="sum-chart"></div>
       <ul class="sum-notes" id="sum-notes"></ul>
+      <div class="years" id="sum-years" hidden>
+        <h3 class="years-title">Comparado com outros anos</h3>
+        <p class="years-lead" id="years-lead"></p>
+        <div id="years-chart"></div>
+        <p class="years-note" id="years-note"></p>
+      </div>
     </section>
 
     <section aria-labelledby="fc-title">
@@ -753,6 +765,7 @@
       <p><strong>Temperatura e qualidade do ar no mapa:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, na mesma grade do vento. A temperatura é a do ar a 2 m; a qualidade do ar usa o índice americano (AQI) do modelo CAMS. As cores entre os pontos são interpoladas: são estimativas de modelo, não medições locais.</p>
       <p><strong>Cidades:</strong> sedes dos municípios do <a href="https://github.com/kelvins/municipios-brasileiros" target="_blank" rel="noopener">kelvins/municipios-brasileiros</a>; letras do mapa do <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
       <p><strong>Sensores de qualidade do ar:</strong> rede <a href="https://map.purpleair.com/" target="_blank" rel="noopener">PurpleAir</a>, com sensores da UEA (projeto EducAIR/SELVA), da SEMA-AM, do MPAM, da FAS, da UFAM e do IPAM. São sensores de baixo custo: os valores passam pela correção da EPA para PurpleAir em fumaça (a do mapa AirNow Fire and Smoke), que usa a leitura bruta e a umidade. Em fumaça densa a correção aumenta a leitura, porque esses sensores subestimam concentrações altas; acima de ~500 µg/m³ a fórmula é extrapolada. Ficam de fora leituras com os dois canais do sensor discordando e leituras brutas acima de 1.000 µg/m³, onde esses sensores saturam.</p>
+      <p><strong>Comparação com outros anos:</strong> focos do satélite Suomi NPP (VIIRS) no arquivo da <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener">NASA FIRMS</a>, desde 2012, no mesmo período do mês e no mesmo raio. Usar um satélite só evita que os anos recentes pareçam piores só porque há mais satélites em órbita.</p>
       <p><strong>Bairros dos sensores:</strong> pela localização de cada sensor no <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (serviço Nominatim).</p>
       <p><strong>Qualidade do ar e vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (modelo CAMS, do Copernicus). O PM2.5 é estimado por modelo numa grade de cerca de 40 km, não medido por sensor em cada bairro.</p>
       <p><strong>Dias sem chuva e risco de fogo:</strong> <a href="https://terrabrasilis.dpi.inpe.br/queimadas/portal/" target="_blank" rel="noopener">INPE – Programa Queimadas</a>, calculados nos focos que o INPE detectou em cada município. O risco vai de 0 a 1; acima de 0,7 é considerado alto ou crítico.</p>
@@ -2220,6 +2233,57 @@
     return 500;
   }
 
+  // ---------- comparação com outros anos ----------
+  var MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  function renderYears() {
+    var d = state.anos, box = document.getElementById("sum-years");
+    if (!d || !d.atual || !Object.keys(d.anos).length) { box.hidden = true; return; }
+    // só dias completos: o dia de hoje ainda está chegando e deixaria o ano atual em desvantagem
+    var n = d.atual.length > 1 ? d.atual.length - 1 : d.atual.length;
+    var mes = MESES[Number(d.mes.slice(5, 7)) - 1], atual = String(d.ano_atual);
+    var soma = function (v) { return v.slice(0, n).reduce(function (a, b) { return a + b; }, 0); };
+    var anos = Object.keys(d.anos).sort().map(function (a) { return { ano: a, v: soma(d.anos[a]) }; });
+    var passados = anos.slice();
+    anos.push({ ano: atual, v: soma(d.atual), atual: true });
+    var media = passados.reduce(function (a, b) { return a + b.v; }, 0) / passados.length;
+    var ordem = anos.slice().sort(function (a, b) { return b.v - a.v; });
+    var pos = ordem.findIndex(function (x) { return x.atual; }) + 1, cur = anos[anos.length - 1];
+    var periodo = n === 1 ? "Em 1º de " + mes : "De 1 a " + n + " de " + mes;
+    var rel = media > 0 ? cur.v / media : 0;
+    var comp = rel >= 1.15 ? "<strong>" + rel.toFixed(1).replace(".", ",") + "× a média</strong> de " + passados[0].ano + "–" + passados[passados.length - 1].ano + " (" + fmtInt.format(Math.round(media)) + ")"
+      : rel <= 0.85 ? "abaixo da média de " + passados[0].ano + "–" + passados[passados.length - 1].ano + " (" + fmtInt.format(Math.round(media)) + ")"
+      : "perto da média de " + passados[0].ano + "–" + passados[passados.length - 1].ano + " (" + fmtInt.format(Math.round(media)) + ")";
+    var rank = pos === 1 ? "o <strong>maior número em " + anos.length + " anos</strong>"
+      : pos <= 3 ? "o <strong>" + pos + "º maior em " + anos.length + " anos</strong>, atrás de " + ordem.slice(0, pos - 1).map(function (x) { return x.ano; }).join(" e ")
+      : pos + "º de " + anos.length + " anos";
+    document.getElementById("years-lead").innerHTML = periodo + ", o satélite de referência detectou <strong>" + fmtInt.format(cur.v) +
+      " focos</strong> na região: " + comp + ", " + rank + ".";
+    document.getElementById("years-note").textContent = "Mesmo satélite (Suomi NPP, VIIRS) em todos os anos, para a comparação ser justa; " +
+      "por isso os números são menores que a soma de todos os satélites do mapa. Raio de 300 km em volta de Manaus.";
+
+    var W = 360, H = 120, padT = 16, padB = 18, gap = 3;
+    var max = Math.max.apply(null, anos.map(function (a) { return a.v; }).concat([1]));
+    var bw = (W - gap * (anos.length - 1)) / anos.length;
+    var y = function (v) { return H - padB - (H - padT - padB) * v / max; };
+    var ember = css("--ember"), muted = css("--muted"), ink = css("--ink"), line = css("--line");
+    var out = ['<line x1="0" x2="' + W + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" stroke="' + line + '"/>'];
+    anos.forEach(function (a, i) {
+      var x = i * (bw + gap), h = Math.max(1, H - padB - y(a.v));
+      out.push('<rect x="' + x.toFixed(1) + '" y="' + (H - padB - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) +
+        '" rx="1.5" fill="' + (a.atual ? ember : muted) + '" fill-opacity="' + (a.atual ? 1 : 0.35) + '"><title>' + a.ano + ": " + fmtInt.format(a.v) + " focos</title></rect>");
+      // rótulo de ano a cada dois, e sempre no atual
+      if (a.atual || i % 2 === 0) out.push('<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 5) + '" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="' +
+        (a.atual ? ink : muted) + '"' + (a.atual ? ' font-weight="600"' : "") + ">" + a.ano.slice(2) + "</text>");
+    });
+    var my = y(media);
+    out.push('<line x1="0" x2="' + W + '" y1="' + my.toFixed(1) + '" y2="' + my.toFixed(1) + '" stroke="' + ink + '" stroke-width="1" stroke-dasharray="3 3" stroke-opacity="0.6"/>');
+    out.push('<text x="2" y="' + (my - 4).toFixed(1) + '" font-size="9" font-family="IBM Plex Mono, monospace" fill="' + muted + '">média</text>');
+    var lx = (anos.length - 1) * (bw + gap) + bw / 2;
+    out.push('<text x="' + Math.min(lx, W - 2).toFixed(1) + '" y="' + (y(cur.v) - 4).toFixed(1) + '" text-anchor="end" font-size="10" font-family="IBM Plex Mono, monospace" fill="' + ink + '">' + fmtInt.format(cur.v) + "</text>");
+    document.getElementById("years-chart").innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Focos de 1 a ' + n + " de " + mes + ' em cada ano desde ' + anos[0].ano + '">' + out.join("") + "</svg>";
+    box.hidden = false;
+  }
+
   function renderDayChart(days, nowMod) {
     var box = document.getElementById("sum-chart");
     if (!days.length) { box.innerHTML = ""; return; }
@@ -2256,6 +2320,7 @@
 
   function onThemeChange() {
     setBaseLayers();
+    if (state.anos) renderYears();
     if (state.data) renderFireAlert();
     if (state.data) renderSummary();
     drawRings();
@@ -2324,6 +2389,9 @@
     });
   }
 
+  fetch("data/anos.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (d) { state.anos = d; renderYears(); })
+    .catch(function () { /* sem a comparação, o resumo segue sem ela */ });
   fetch("data/historico.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (d) {
       state.hist = d;
