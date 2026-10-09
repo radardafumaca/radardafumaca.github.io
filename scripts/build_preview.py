@@ -221,6 +221,8 @@ def preencher(html_path, site_url, titulo, descricao, versao):
         html, n = padrao.subn(lambda m: m.group(1) + escape(valor, quote=True) + m.group(2), html, count=1)
         if not n:
             print(f"etiqueta {chave} não encontrada no HTML")
+    # endereço oficial da página (o Google usa para não tratar o antigo e o novo como páginas diferentes)
+    html = re.sub(r'(<link rel="canonical" href=")[^"]*(")', lambda m: m.group(1) + escape(site_url, quote=True) + m.group(2), html, count=1)
     html_path.write_text(html, encoding="utf-8")
 
 

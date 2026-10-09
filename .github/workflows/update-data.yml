@@ -30,13 +30,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      # Endereço do site como está configurado no GitHub Pages (github.io ou domínio próprio).
+      - id: pages
+        uses: actions/configure-pages@v6
       - name: Guardar os dados publicados (reserva se a FIRMS ou a Open-Meteo falharem)
         run: |
-          site="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data"
-          curl -sf --retry 3 "$site/grade.json" -o data/grade.prev.json || true
-          curl -sf --retry 3 "$site/focos.json" -o data/focos.prev.json || true
-          curl -sf --retry 3 "$site/sensores.json" -o data/sensores.prev.json || true
-          curl -sf --retry 5 "$site/historico.json" -o data/historico.prev.json || true
+          # -L: com domínio próprio, o endereço antigo redireciona para o novo
+          site="${{ steps.pages.outputs.base_url }}/data"
+          curl -sfL --retry 3 "$site/grade.json" -o data/grade.prev.json || true
+          curl -sfL --retry 3 "$site/focos.json" -o data/focos.prev.json || true
+          curl -sfL --retry 3 "$site/sensores.json" -o data/sensores.prev.json || true
+          curl -sfL --retry 5 "$site/historico.json" -o data/historico.prev.json || true
       - name: Baixar focos
         run: python scripts/update_data.py
         env:
@@ -52,12 +56,15 @@ jobs:
           if [ -f data/grade.json ]; then cp data/grade.json _site/data/; fi
           if [ -f data/sensores.json ]; then cp data/sensores.json _site/data/; fi
           if [ -f data/historico.json ]; then cp data/historico.json _site/data/; fi
+          # para buscadores: o que pode ser indexado e quando a página mudou
+          base="${{ steps.pages.outputs.base_url }}/"
+          printf 'User-agent: *\nAllow: /\nSitemap: %ssitemap.xml\n' "$base" > _site/robots.txt
+          printf '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>%s</loc><lastmod>%s</lastmod><changefreq>hourly</changefreq></url>\n</urlset>\n' "$base" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > _site/sitemap.xml
       # Prévia do link (WhatsApp, redes): imagem e textos com os números do momento.
       # Se falhar, o site sai com a prévia padrão.
       - name: Prévia para compartilhar
         run: |
-          pip install -q "pillow>=11,<13" && python scripts/build_preview.py _site "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" || echo "prévia não gerada; seguindo com a padrão"
-      - uses: actions/configure-pages@v6
+          pip install -q "pillow>=11,<13" && python scripts/build_preview.py _site "${{ steps.pages.outputs.base_url }}/" || echo "prévia não gerada; seguindo com a padrão"
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
