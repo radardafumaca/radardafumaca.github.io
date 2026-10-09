@@ -41,6 +41,7 @@ jobs:
           curl -sfL --retry 3 "$site/focos.json" -o data/focos.prev.json || true
           curl -sfL --retry 3 "$site/sensores.json" -o data/sensores.prev.json || true
           curl -sfL --retry 5 "$site/historico.json" -o data/historico.prev.json || true
+          curl -sfL --retry 3 "$site/bairros.json" -o data/bairros.prev.json || true
       - name: Baixar focos
         run: python scripts/update_data.py
         env:
@@ -56,6 +57,7 @@ jobs:
           if [ -f data/grade.json ]; then cp data/grade.json _site/data/; fi
           if [ -f data/sensores.json ]; then cp data/sensores.json _site/data/; fi
           if [ -f data/historico.json ]; then cp data/historico.json _site/data/; fi
+          if [ -f data/bairros.json ]; then cp data/bairros.json _site/data/; fi
           # para buscadores: o que pode ser indexado e quando a página mudou
           base="${{ steps.pages.outputs.base_url }}/"
           printf 'User-agent: *\nAllow: /\nSitemap: %ssitemap.xml\n' "$base" > _site/robots.txt

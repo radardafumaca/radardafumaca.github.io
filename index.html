@@ -752,7 +752,8 @@
       <p><strong>Correntes de vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, numa grade de 8 × 8 pontos sobre a região (cerca de 85 km entre eles), atualizada a cada 30 minutos. "Solo" é o vento a 10 m; "1,5 km" é o vento a 850 hPa, altura em que a fumaça costuma viajar.</p>
       <p><strong>Temperatura e qualidade do ar no mapa:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, na mesma grade do vento. A temperatura é a do ar a 2 m; a qualidade do ar usa o índice americano (AQI) do modelo CAMS. As cores entre os pontos são interpoladas: são estimativas de modelo, não medições locais.</p>
       <p><strong>Cidades:</strong> sedes dos municípios do <a href="https://github.com/kelvins/municipios-brasileiros" target="_blank" rel="noopener">kelvins/municipios-brasileiros</a>; letras do mapa do <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
-      <p><strong>Sensores de qualidade do ar:</strong> rede <a href="https://map.purpleair.com/" target="_blank" rel="noopener">PurpleAir</a>, com sensores da UEA (projeto EducAIR/SELVA), da SEMA-AM, do MPAM, da FAS, da UFAM e do IPAM. São sensores de baixo custo: os valores passam pela correção da EPA para PurpleAir em fumaça (a do mapa AirNow Fire and Smoke), que usa a leitura bruta e a umidade. Em fumaça densa a correção aumenta a leitura, porque esses sensores subestimam concentrações altas; acima de ~500 µg/m³ a fórmula é extrapolada. Leituras com os dois canais do sensor discordando ficam de fora.</p>
+      <p><strong>Sensores de qualidade do ar:</strong> rede <a href="https://map.purpleair.com/" target="_blank" rel="noopener">PurpleAir</a>, com sensores da UEA (projeto EducAIR/SELVA), da SEMA-AM, do MPAM, da FAS, da UFAM e do IPAM. São sensores de baixo custo: os valores passam pela correção da EPA para PurpleAir em fumaça (a do mapa AirNow Fire and Smoke), que usa a leitura bruta e a umidade. Em fumaça densa a correção aumenta a leitura, porque esses sensores subestimam concentrações altas; acima de ~500 µg/m³ a fórmula é extrapolada. Ficam de fora leituras com os dois canais do sensor discordando e leituras brutas acima de 1.000 µg/m³, onde esses sensores saturam.</p>
+      <p><strong>Bairros dos sensores:</strong> pela localização de cada sensor no <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (serviço Nominatim).</p>
       <p><strong>Qualidade do ar e vento:</strong> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (modelo CAMS, do Copernicus). O PM2.5 é estimado por modelo numa grade de cerca de 40 km, não medido por sensor em cada bairro.</p>
       <p><strong>Dias sem chuva e risco de fogo:</strong> <a href="https://terrabrasilis.dpi.inpe.br/queimadas/portal/" target="_blank" rel="noopener">INPE – Programa Queimadas</a>, calculados nos focos que o INPE detectou em cada município. O risco vai de 0 a 1; acima de 0,7 é considerado alto ou crítico.</p>
     </section>
@@ -959,7 +960,9 @@
       var near = list.map(function (x) { return { x: x, km: distanceKm(lat, lon, x.lat, x.lon) }; }).sort(function (a, b) { return a.km - b.km; })[0];
       if (near) {
         var b = bandOf(near.x.pm25);
-        parts.push("Sensor mais próximo: <strong>" + near.x.nome + "</strong> (" + near.x.rede + "), a " + near.km.toFixed(1).replace(".", ",") + " km de você");
+        var place = sensorPlace(near.x);
+        parts.push("Sensor mais próximo: <strong>" + (place || near.x.nome) + "</strong>, a " + near.km.toFixed(1).replace(".", ",") + " km de você" +
+          (place ? ' <span class="fine">(' + near.x.nome + ", " + near.x.rede + ")</span>" : " (" + near.x.rede + ")"));
         parts.push('<span><span class="val" style="background:' + b[1] + ";color:" + (near.x.pm25 >= 55.5 ? "#fff" : "#1b2220") + '">' + near.x.pm25.toFixed(0) +
           " µg/m³ · " + b[2] + "</span> · " + (near.x.pm25 / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência da OMS · medido às " +
           hhmm(localMinOfDay(Date.parse(near.x.visto_em) / 60000)) + "</span>");
@@ -1519,10 +1522,17 @@
     var v = vals.slice().sort(function (a, b) { return a - b; }), m = Math.floor(v.length / 2);
     return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
   }
+  // "Cachoeirinha, Manaus" quando o OpenStreetMap conhece o bairro; senão a cidade
+  function sensorPlace(x) {
+    if (x.bairro && x.cidade) return x.bairro + ", " + x.cidade;
+    return x.bairro || x.cidade || "";
+  }
   function sensorPopup(x) {
-    var b = bandOf(x.pm25), city = cidades.length ? nearestCity(x.lon, x.lat) : null;
-    return '<div class="sensor-pop"><strong>' + x.nome + "</strong> · " + x.rede +
-      (city ? "<br>perto de " + city.nome + ", " + Math.round(distanceKm(MANAUS[0], MANAUS[1], x.lat, x.lon)) + " km do centro de Manaus" : "") +
+    var b = bandOf(x.pm25), city = cidades.length ? nearestCity(x.lon, x.lat) : null, place = sensorPlace(x);
+    var km = Math.round(distanceKm(MANAUS[0], MANAUS[1], x.lat, x.lon));
+    return '<div class="sensor-pop"><strong>' + (place || x.nome) + "</strong>" +
+      "<br>Sensor " + x.nome + " · " + x.rede +
+      (x.cidade === "Manaus" ? "<br>" + km + " km do centro de Manaus" : city && !place ? "<br>perto de " + city.nome + ", " + km + " km de Manaus" : "<br>" + km + " km de Manaus") +
       '<br><span class="val" style="background:' + b[1] + ";color:" + (x.pm25 >= 55.5 ? "#fff" : "#1b2220") + '">' + x.pm25.toFixed(0) + " µg/m³ · " + b[2] + "</span>" +
       "<br>" + (x.pm25 / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência diária da OMS" +
       "<br>Leitura bruta do sensor: " + x.bruto.toFixed(0) + " µg/m³ · umidade " + x.umidade + "%" +
@@ -1823,8 +1833,8 @@
       aqi = Math.round(pm25ToAqi(pm));
       unit = "µg/m³ · PM2.5<br>mediana de " + ms.length + " sensores";
       var lo = ms.reduce(function (a, b) { return b.pm25 < a.pm25 ? b : a; }), hi = ms.reduce(function (a, b) { return b.pm25 > a.pm25 ? b : a; });
-      sensorsHtml = '<p class="air-sensors">Sensores em Manaus agora: de <strong>' + lo.pm25.toFixed(0) + "</strong> (" + lo.nome + ") a <strong>" +
-        hi.pm25.toFixed(0) + " µg/m³</strong> (" + hi.nome + "). O modelo CAMS estima " + modelPm.toFixed(0) + " µg/m³" +
+      sensorsHtml = '<p class="air-sensors">Sensores em Manaus agora: de <strong>' + lo.pm25.toFixed(0) + "</strong> em " + (lo.bairro || lo.nome) + " a <strong>" +
+        hi.pm25.toFixed(0) + " µg/m³</strong> em " + (hi.bairro || hi.nome) + ". O modelo CAMS estima " + modelPm.toFixed(0) + " µg/m³" +
         (pm > modelPm * 1.5 ? ": em fumaça densa, o modelo costuma subestimar." : ".") + "</p>";
     }
     var info = aqiInfo(aqi);

@@ -12,6 +12,7 @@ import io
 import json
 import math
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -32,11 +33,22 @@ SENSORES_VALIDADE_HORAS = 2
 PURPLEAIR_URL = "https://api.purpleair.com/v1/sensors"
 # Histórico da mediana dos sensores de Manaus (raio de 25 km do centro, como no painel).
 HISTORICO = DATA / "historico.json"
+# Bairro de cada sensor, pelo OpenStreetMap (Nominatim). Sensores não mudam de lugar:
+# cada um é consultado uma vez e o resultado fica guardado (e publicado, para a próxima rodada).
+BAIRROS = DATA / "bairros.json"
+BAIRROS_ANTERIOR = DATA / "bairros.prev.json"
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+# a política do Nominatim pede identificação de quem consulta e no máximo 1 consulta por segundo
+NOMINATIM_AGENTE = "RadarDaFumaca/1.0 (https://radardafumaca.github.io)"
+NOMINATIM_MAX_POR_RODADA = 15
 HISTORICO_ANTERIOR = DATA / "historico.prev.json"
 HISTORICO_DIAS = 7
 MANAUS_RAIO_SENSORES_KM = 25
 # Leitura com os dois canais do sensor discordando muito (confiança baixa) fica de fora.
 CONFIANCA_MINIMA = 50
+# Os sensores PurpleAir saturam perto de 1.000 µg/m³: acima disso é defeito, não fumaça
+# (e a correção da EPA, quadrática em fumaça densa, multiplicaria o erro).
+LEITURA_MAXIMA = 1000
 # Focos publicados na rodada anterior: reserva se a FIRMS ficar fora do ar.
 FOCOS_ANTERIOR = DATA / "focos.prev.json"
 FOCOS_VALIDADE_HORAS = 6
@@ -421,7 +433,7 @@ def sensores(now):
                 continue
             if distance_km(*MANAUS, r["latitude"], r["longitude"]) > RADIUS_KM:
                 continue
-            if (r.get("confidence") or 0) < CONFIANCA_MINIMA:
+            if (r.get("confidence") or 0) < CONFIANCA_MINIMA or r["pm2.5_cf_1"] > LEITURA_MAXIMA:
                 descartados += 1
                 continue
             umidade = r["humidity"] if r.get("humidity") is not None else 50
@@ -448,10 +460,51 @@ def sensores(now):
             pass
         return
     lista.sort(key=lambda x: -x["pm25"])
+    localizar(lista)
     payload = {"atualizado_em": now.isoformat(timespec="minutes"), "descartados": descartados, "sensores": lista}
     SENSORES.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"{len(lista)} sensores PurpleAir ({descartados} descartados por baixa confiança) -> {SENSORES}")
+    print(f"{len(lista)} sensores PurpleAir ({descartados} descartados: canais discordando ou leitura fora da faixa) -> {SENSORES}")
     historico(now, lista, key)
+
+
+def localizar(lista):
+    """Põe bairro e cidade em cada sensor, consultando o OpenStreetMap só para os que faltam."""
+    cache = {}
+    for fonte in (BAIRROS, BAIRROS_ANTERIOR):
+        try:
+            cache.update(json.loads(fonte.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    consultas = 0
+    for x in lista:
+        chave = str(x["id"])
+        c = cache.get(chave)
+        # sensor que mudou de lugar (mais de 300 m) é consultado de novo
+        if c and distance_km(c["lat"], c["lon"], x["lat"], x["lon"]) <= 0.3:
+            x["bairro"], x["cidade"] = c.get("bairro"), c.get("cidade")
+            continue
+        if consultas >= NOMINATIM_MAX_POR_RODADA:
+            continue
+        if consultas:
+            time.sleep(1.1)
+        consultas += 1
+        query = urllib.parse.urlencode({"format": "jsonv2", "lat": x["lat"], "lon": x["lon"], "zoom": 16,
+                                        "addressdetails": 1, "accept-language": "pt-BR"})
+        try:
+            req = urllib.request.Request(f"{NOMINATIM_URL}?{query}", headers={"User-Agent": NOMINATIM_AGENTE})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                endereco = json.load(response).get("address", {})
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+            continue
+        bairro = next((endereco[k] for k in ("suburb", "neighbourhood", "quarter") if endereco.get(k)), None)
+        if bairro:
+            bairro = re.sub(r"^(Bairro|Conjunto)\s+(de|do|da|dos|das)?\s*", "", bairro).strip() or bairro
+        cidade = next((endereco[k] for k in ("city", "town", "village", "municipality", "city_district") if endereco.get(k)), None)
+        cache[chave] = {"bairro": bairro, "cidade": cidade, "lat": x["lat"], "lon": x["lon"]}
+        x["bairro"], x["cidade"] = bairro, cidade
+    BAIRROS.write_text(json.dumps(cache, ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    if consultas:
+        print(f"bairros: {consultas} sensor(es) consultado(s) no OpenStreetMap")
 
 
 def mediana(valores):
@@ -519,6 +572,8 @@ def historico_purpleair(now, sensores_manaus, key):
                 continue
             # canais discordando muito: leitura descartada (mesmo critério de confiança da PurpleAir)
             if abs(a - b) > 5 and abs(a - b) / max((a + b) / 2, 1e-6) > 0.7:
+                continue
+            if (a + b) / 2 > LEITURA_MAXIMA:
                 continue
             umidade = r.get("humidity") if r.get("humidity") is not None else 50
             hora = datetime.fromtimestamp(r["time_stamp"], timezone.utc).replace(minute=0, second=0, microsecond=0)
