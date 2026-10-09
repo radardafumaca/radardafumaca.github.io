@@ -137,6 +137,7 @@
     font-size: 12px;
   }
   .legend-body { display: grid; gap: 6px; margin-top: 8px; }
+  .legend-fires { display: grid; gap: 6px; }
 
   .map-info {
     position: absolute; right: 12px; bottom: 34px; z-index: 500;
@@ -464,7 +465,8 @@
     <details class="layers collapsible" id="layers-box" open>
       <summary>Camadas</summary>
       <div class="layers-body">
-      <div class="seg" role="group" aria-label="Como mostrar os focos">
+      <label class="check" for="opt-fires"><input type="checkbox" id="opt-fires" checked> Focos de incêndio</label>
+      <div class="seg" id="mode-group" role="group" aria-label="Como mostrar os focos">
         <button type="button" id="mode-pontos" data-mode="pontos" aria-pressed="true">Pontos</button>
         <button type="button" id="mode-calor" data-mode="calor" aria-pressed="false">Calor</button>
       </div>
@@ -492,11 +494,13 @@
     <details class="legend collapsible" id="legend-box" open>
       <summary>Legenda</summary>
       <div class="legend-body">
+      <span class="legend-fires" id="legend-fires">
       <span class="legend-title">Foco detectado há</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-new)"></span>menos de 6 h</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-day)"></span>6 a 24 h</span>
       <span class="legend-row"><span class="dot" style="background: var(--fire-old)"></span>24 a 48 h</span>
       <span class="legend-row" id="legend-older" hidden><span class="dot" style="background: var(--fire-older)"></span>2 a 5 dias</span>
+      </span>
       <span class="legend-heat" id="legend-heat" hidden>
         <span class="legend-title">Concentração de focos</span>
         <span class="heat-bar"></span>
@@ -843,7 +847,7 @@
   }
 
   // ---------- preferências das camadas (lembradas neste navegador) ----------
-  var prefs = { mode: "pontos", wind: false, level: "superficie", cities: true, overlay: "nenhum" };
+  var prefs = { fires: true, mode: "pontos", wind: false, level: "superficie", cities: true, overlay: "nenhum" };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem("radar-camadas") || "{}")); } catch (e) {}
   function savePrefs() { try { localStorage.setItem("radar-camadas", JSON.stringify(prefs)); } catch (e) {} }
 
@@ -858,10 +862,17 @@
     document.querySelectorAll("[data-overlay]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.overlay === prefs.overlay)); });
     document.getElementById("opt-wind").checked = prefs.wind;
     document.getElementById("opt-cities").checked = prefs.cities;
+    document.getElementById("opt-fires").checked = prefs.fires;
+    document.getElementById("mode-group").hidden = !prefs.fires;
+    document.getElementById("legend-fires").hidden = !prefs.fires;
+    pulseMarkers.forEach(function (m) { m.getElement().hidden = !prefs.fires; });
+    if (!prefs.fires) popup.remove();
     document.getElementById("wind-level").hidden = !prefs.wind;
-    document.getElementById("legend-heat").hidden = prefs.mode !== "calor";
+    document.getElementById("legend-heat").hidden = !prefs.fires || prefs.mode !== "calor";
     mapReady.then(function () {
-      map.setLayoutProperty("heat", "visibility", prefs.mode === "calor" ? "visible" : "none");
+      var firesVis = prefs.fires ? "visible" : "none";
+      map.setLayoutProperty("heat", "visibility", prefs.fires && prefs.mode === "calor" ? "visible" : "none");
+      ["fires", "alert-labels", "alert-ring"].forEach(function (id) { map.setLayoutProperty(id, "visibility", firesVis); });
       map.setPaintProperty("fires", "circle-opacity", pointOpacity());
       ["cities", "city-dots", "city-manaus"].forEach(function (id) {
         map.setLayoutProperty(id, "visibility", prefs.cities ? "visible" : "none");
@@ -1147,7 +1158,7 @@
   map.on("click", function (e) {
     var p = e.point, slack = 8;
     // no modo calor, de longe os pontos estão escondidos: não abre popup de algo invisível
-    var pointsVisible = !(prefs.mode === "calor" && map.getZoom() < 9);
+    var pointsVisible = prefs.fires && !(prefs.mode === "calor" && map.getZoom() < 9);
     var hits = pointsVisible && map.getLayer("fires") ? map.queryRenderedFeatures([[p.x - slack, p.y - slack], [p.x + slack, p.y + slack]], { layers: ["fires"] }) : [];
     if (!hits.length) {
       // sem foco no lugar: mostra o valor estimado da camada de cor, se houver
@@ -1172,7 +1183,7 @@
     popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
   });
   map.on("mouseenter", "fires", function () {
-    if (prefs.mode === "calor" && map.getZoom() < 9) return;
+    if (!prefs.fires || (prefs.mode === "calor" && map.getZoom() < 9)) return;
     map.getCanvas().style.cursor = "pointer";
   });
   map.on("mouseleave", "fires", function () { map.getCanvas().style.cursor = ""; });
@@ -1273,7 +1284,9 @@
     var total = counts.reduce(function (a, b) { return a + b; }, 0);
     var text = document.getElementById("wind-text");
     if (!state.wind) {
-      text.textContent = total ? "Os focos estão concentrados a " + SECTOR_NAMES[counts.indexOf(max)] + " de Manaus. Dados de vento indisponíveis no momento." : "Sem focos no período.";
+      // enquanto a consulta do vento não volta, diz que está buscando; "indisponível" só se ela falhar
+      var windNote = state.weatherFailed ? "Dados de vento indisponíveis no momento." : "Buscando o vento…";
+      text.textContent = total ? "Os focos estão concentrados a " + SECTOR_NAMES[counts.indexOf(max)] + " de Manaus. " + windNote : "Sem focos no período. " + windNote;
       return;
     }
     var ws = sectorOf(state.wind.from);
@@ -1546,6 +1559,7 @@
       btn.innerHTML = '<span class="alert-km">' + Math.round(r.km) + ' km</span><span class="alert-where"></span><span class="alert-when">' + when(f[2]) + "</span>";
       btn.querySelector(".alert-where").innerHTML = "a " + SECTOR_NAMES[sectorOf(bearing(MANAUS[0], MANAUS[1], f[0], f[1]))] + " <span>· " + state.data.municipios[f[3]].nome + "</span>";
       btn.addEventListener("click", function () {
+        if (!prefs.fires) { prefs.fires = true; savePrefs(); applyLayers(); }
         map.flyTo({ center: [f[1], f[0]], zoom: 11, duration: reducedMotion() ? 0 : 900 });
         popup.setLngLat([f[1], f[0]]).setHTML(popupHtml(f)).addTo(map);
         if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
@@ -1573,6 +1587,7 @@
     show.forEach(function (r) {
       var el = document.createElement("div");
       el.className = "fire-pulse";
+      el.hidden = !prefs.fires;
       el.style.setProperty("--level", "var(" + LEVEL_COLOR[level] + ")");
       pulseMarkers.push(new maplibregl.Marker({ element: el }).setLngLat([r.f[1], r.f[0]]).addTo(map));
     });
@@ -1595,6 +1610,7 @@
     chip.textContent = level === "ok" ? "Nenhum foco a menos de 100 km (12 h)" :
       "Foco ativo a " + Math.round(near.km) + " km de Manaus · " + state.data.municipios[near.f[3]].nome;
     chip.onclick = function () {
+      if (!prefs.fires) { prefs.fires = true; savePrefs(); applyLayers(); }
       if (level === "ok") { fitRegion(); return; }
       map.flyTo({ center: [near.f[1], near.f[0]], zoom: 11, duration: reducedMotion() ? 0 : 900 });
       popup.setLngLat([near.f[1], near.f[0]]).setHTML(popupHtml(near.f)).addTo(map);
@@ -1752,6 +1768,7 @@
     b.addEventListener("click", function () { prefs.overlay = b.dataset.overlay; savePrefs(); applyLayers(); });
   });
   document.getElementById("opt-wind").addEventListener("change", function (e) { prefs.wind = e.target.checked; savePrefs(); applyLayers(); });
+  document.getElementById("opt-fires").addEventListener("change", function (e) { prefs.fires = e.target.checked; savePrefs(); applyLayers(); });
   document.getElementById("opt-cities").addEventListener("change", function (e) { prefs.cities = e.target.checked; savePrefs(); applyLayers(); });
   applyLayers();
   // no celular, camadas e legenda começam recolhidas para não cobrir o mapa
@@ -1828,6 +1845,7 @@
     renderForecast();
     if (state.data) { renderCompass(); renderMunicipios(); }
   }, function () {
+    state.weatherFailed = true;
     document.getElementById("wind-text").textContent = "Não foi possível buscar o vento na Open-Meteo. Recarregue a página em alguns minutos.";
   });
 
