@@ -269,6 +269,7 @@
   .sensor-scale { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; font-size: 11px; align-items: center; }
   .sensor-scale i { display: inline-block; width: 26px; height: 14px; border-radius: 7px; font: 600 9px/14px var(--font-body); text-align: center; font-style: normal; }
   .sensor-scale span { color: var(--muted); }
+  .scale-ends { display: none; justify-content: space-between; color: var(--muted); font-size: 11px; }
   .air-sensors { margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
   .air-sensors strong { color: var(--ink); }
   .spark-cap { margin: 12px 0 -6px; font-size: 12px; color: var(--muted); }
@@ -455,7 +456,22 @@
     .fire-pulse::after { border-width: 1.5px; }
     .layers { top: 46px; right: 8px; padding: 6px 8px; }
     .layers-body { gap: 6px; }
-    .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: calc(100% - 16px); }
+    .legend { left: 8px; bottom: 14px; padding: 6px 10px; max-width: min(230px, calc(100% - 16px)); }
+    .legend-body { gap: 5px; font-size: 12px; max-height: 40vh; max-height: 40svh; overflow-y: auto; overscroll-behavior: contain; }
+    .legend-fires { grid-template-columns: auto auto; column-gap: 12px; row-gap: 3px; }
+    .legend-fires .legend-title { grid-column: 1 / -1; }
+    .legend .dot { width: 8px; height: 8px; }
+    .legend-title { font-size: 10px; }
+    /* as notas explicam o que o toque no mapa já mostra; no celular ocupariam meia tela */
+    .legend .overlay-note, .heat-ends { display: none; }
+    .sensor-scale { grid-template-columns: repeat(6, 1fr); gap: 3px; }
+    .sensor-scale span { display: none; }
+    .sensor-scale i { width: auto; }
+    .scale-ends { display: flex; }
+    .legend-overlay, .legend-sensors, .legend-heat, .legend-wind { max-width: none; }
+    .legend-wind { font-size: 11px; }
+    /* legenda aberta ocupa o pé do mapa: aviso e previsão saem até ela fechar */
+    .map-wrap:has(#legend-box[open]) .map-info { display: none; }
     .map-info { right: 8px; bottom: 46px; max-width: 62%; }
     .alert-chip { font-size: 12px; padding: 6px 10px 6px 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .alert-chip::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
@@ -545,6 +561,7 @@
       <span class="legend-sensors" id="legend-sensors" hidden>
         <span class="legend-title">Sensores · PM2.5 medido <span class="unit">(µg/m³)</span></span>
         <span class="sensor-scale" id="sensor-scale"></span>
+        <span class="scale-ends"><span>bom</span><span>perigoso</span></span>
         <span class="overlay-note">Círculo com contorno largo: grupo de sensores, mostra o pior valor. Toque para aproximar.</span>
       </span>
       <span class="legend-wind" id="legend-wind" hidden></span>
@@ -1981,6 +1998,15 @@
   document.getElementById("opt-sensors").addEventListener("change", function (e) { prefs.sensors = e.target.checked; savePrefs(); applyLayers(); });
   document.getElementById("opt-cities").addEventListener("change", function (e) { prefs.cities = e.target.checked; savePrefs(); applyLayers(); });
   applyLayers();
+  // no celular, só uma janela aberta por vez: abrir uma fecha as outras, para não se sobreporem
+  if (MOBILE) {
+    var panels = ["layers-box", "legend-box", "map-fc"].map(function (id) { return document.getElementById(id); });
+    panels.forEach(function (el) {
+      el.addEventListener("toggle", function () {
+        if (el.open) panels.forEach(function (o) { if (o !== el) o.open = false; });
+      });
+    });
+  }
   // no celular, camadas e legenda começam recolhidas para não cobrir o mapa
   if (window.matchMedia("(max-width: 860px)").matches) {
     document.getElementById("layers-box").open = false;
