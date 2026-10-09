@@ -1846,8 +1846,8 @@
       aqi = Math.round(pm25ToAqi(pm));
       unit = "µg/m³ · PM2.5<br>mediana de " + ms.length + " sensores";
       var lo = ms.reduce(function (a, b) { return b.pm25 < a.pm25 ? b : a; }), hi = ms.reduce(function (a, b) { return b.pm25 > a.pm25 ? b : a; });
-      sensorsHtml = '<p class="air-sensors">Sensores em Manaus agora: de <strong>' + lo.pm25.toFixed(0) + "</strong> em " + (lo.bairro || lo.nome) + " a <strong>" +
-        hi.pm25.toFixed(0) + " µg/m³</strong> em " + (hi.bairro || hi.nome) + ". O modelo CAMS estima " + modelPm.toFixed(0) + " µg/m³" +
+      sensorsHtml = '<p class="air-sensors">Sensores em Manaus agora: de <strong>' + lo.pm25.toFixed(0) + "</strong> em " + (lo.bairro || lo.cidade || lo.nome) + " a <strong>" +
+        hi.pm25.toFixed(0) + " µg/m³</strong> em " + (hi.bairro || hi.cidade || hi.nome) + ". O modelo CAMS estima " + modelPm.toFixed(0) + " µg/m³" +
         (pm > modelPm * 1.5 ? ": em fumaça densa, o modelo costuma subestimar." : ".") + "</p>";
     }
     var info = aqiInfo(aqi);
