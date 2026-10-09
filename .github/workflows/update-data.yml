@@ -8,7 +8,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # contents e actions de escrita: só para o passo que mantém a rotina ativa
+  contents: write
+  actions: write
   pages: write
   id-token: write
 
@@ -24,8 +26,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Guardar os dados publicados (reserva se a FIRMS ou a Open-Meteo falharem)
@@ -34,6 +36,7 @@ jobs:
           curl -sf --retry 3 "$site/grade.json" -o data/grade.prev.json || true
           curl -sf --retry 3 "$site/focos.json" -o data/focos.prev.json || true
           curl -sf --retry 3 "$site/sensores.json" -o data/sensores.prev.json || true
+          curl -sf --retry 5 "$site/historico.json" -o data/historico.prev.json || true
       - name: Baixar focos
         run: python scripts/update_data.py
         env:
@@ -48,9 +51,29 @@ jobs:
           # a grade (vento, temperatura, ar) é opcional: se a Open-Meteo falhar, o site sai sem ela
           if [ -f data/grade.json ]; then cp data/grade.json _site/data/; fi
           if [ -f data/sensores.json ]; then cp data/sensores.json _site/data/; fi
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+          if [ -f data/historico.json ]; then cp data/historico.json _site/data/; fi
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+      # O GitHub desliga rotinas agendadas de repositórios sem commit há 60 dias; como esta
+      # Action não faz commit dos dados, o site congelaria sem aviso. Aos 40 dias, reativa a
+      # rotina pela API (método da keepalive-workflow); aos 50, um commit vazio zera o prazo.
+      - name: Manter a rotina agendada ativa
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dias=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          echo "último commit há $dias dias"
+          if [ "$dias" -ge 40 ]; then
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/update-data.yml/enable"
+          fi
+          if [ "$dias" -ge 50 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "manutenção: manter a rotina agendada ativa"
+            git push
+          fi

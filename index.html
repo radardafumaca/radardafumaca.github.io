@@ -273,6 +273,22 @@
   .air-sensors { margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
   .air-sensors strong { color: var(--ink); }
   .spark-cap { margin: 12px 0 -6px; font-size: 12px; color: var(--muted); }
+  .spark-cap i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--ember); vertical-align: 3px; margin: 0 4px; }
+  .spark-cap i.model { border-top: 1.5px dashed var(--muted); }
+  .near-btn {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; padding: 9px 14px;
+    border: 1.5px solid var(--ember); border-radius: 999px; background: transparent; color: var(--ember);
+    font: 600 14px/1 var(--font-body); cursor: pointer;
+  }
+  .near-btn:hover { background: var(--ground); }
+  .near-btn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .near-btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
+  .near-result { margin-top: 12px; padding: 12px 14px; border-radius: 6px; background: var(--ground); display: grid; gap: 6px; font-size: 14px; line-height: 1.45; }
+  .near-result .val { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 700; }
+  .near-result p { margin: 0; }
+  .near-result .fine { font-size: 12px; color: var(--muted); }
+  .near-result strong { font-weight: 600; }
+  .you-marker { width: 16px; height: 16px; border-radius: 50%; background: #1c7ed6; border: 3px solid #fff; box-shadow: 0 0 0 2px rgb(28 126 214 / 0.35), 0 1px 4px rgb(0 0 0 / 0.3); }
   .sensor-pop .val { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 700; margin: 2px 0; }
   .overlay-bar { height: 8px; border-radius: 4px; }
   .overlay-ticks { display: flex; justify-content: space-between; gap: 4px; color: var(--muted); font: 11px/1.2 var(--font-data); }
@@ -580,6 +596,11 @@
     <section aria-labelledby="air-title">
       <h2 id="air-title">O ar em Manaus agora</h2>
       <div id="air"><p class="hint">Buscando qualidade do ar…</p></div>
+      <button type="button" class="near-btn" id="near-btn">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 15s5-4.6 5-8.5A5 5 0 0 0 3 6.5C3 10.4 8 15 8 15z"/><circle cx="8" cy="6.5" r="1.8"/></svg>
+        Ver o ar perto de mim
+      </button>
+      <div class="near-result" id="near-result" role="status" hidden></div>
     </section>
 
     <section aria-labelledby="wind-title">
@@ -804,6 +825,78 @@
   };
   FullControl.prototype.onRemove = function () { this._bar.remove(); };
   map.addControl(new FullControl(), "top-left");
+
+  // ---------- o ar perto de mim ----------
+  var youMarker = null;
+  function nearMe(fromMap) {
+    var out = document.getElementById("near-result"), btn = document.getElementById("near-btn");
+    var show = function (html) { out.innerHTML = html; out.hidden = false; };
+    if (!navigator.geolocation) { show("Este navegador não informa a localização."); return; }
+    btn.setAttribute("aria-busy", "true");
+    show("Buscando sua localização…");
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      btn.removeAttribute("aria-busy");
+      var lat = pos.coords.latitude, lon = pos.coords.longitude, fromManaus = distanceKm(MANAUS[0], MANAUS[1], lat, lon);
+      if (fromManaus > 320) {
+        show("Você está a " + fmtInt.format(Math.round(fromManaus)) + " km de Manaus, fora da área do Radar (300 km em volta da cidade).");
+        return;
+      }
+      var el = document.createElement("div");
+      el.className = "you-marker";
+      el.title = "Você";
+      if (youMarker) youMarker.remove();
+      youMarker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+      map.flyTo({ center: [lon, lat], zoom: 11.5, duration: reducedMotion() ? 0 : 900 });
+
+      var parts = [];
+      var list = state.sensors ? state.sensors.sensores : [];
+      var near = list.map(function (x) { return { x: x, km: distanceKm(lat, lon, x.lat, x.lon) }; }).sort(function (a, b) { return a.km - b.km; })[0];
+      if (near) {
+        var b = bandOf(near.x.pm25);
+        parts.push("Sensor mais próximo: <strong>" + near.x.nome + "</strong> (" + near.x.rede + "), a " + near.km.toFixed(1).replace(".", ",") + " km de você");
+        parts.push('<span><span class="val" style="background:' + b[1] + ";color:" + (near.x.pm25 >= 55.5 ? "#fff" : "#1b2220") + '">' + near.x.pm25.toFixed(0) +
+          " µg/m³ · " + b[2] + "</span> · " + (near.x.pm25 / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência da OMS · medido às " +
+          hhmm(localMinOfDay(Date.parse(near.x.visto_em) / 60000)) + "</span>");
+        if (near.km > 10) parts.push('<span class="fine">O sensor mais próximo está a mais de 10 km: o valor pode não representar bem o seu bairro.</span>');
+      } else parts.push("Não há sensores com leitura recente nesta área.");
+      if (state.data) {
+        var minMin = Date.now() / 60000 - 12 * 60, best = null;
+        state.data.focos.forEach(function (f) {
+          if (f[2] < minMin) return;
+          var km = distanceKm(lat, lon, f[0], f[1]);
+          if (!best || km < best.km) best = { f: f, km: km };
+        });
+        if (best) parts.push("Foco ativo mais próximo de você (12 h): <strong>" + Math.round(best.km) + " km</strong> a " +
+          SECTOR_NAMES[sectorOf(bearing(lat, lon, best.f[0], best.f[1]))] + ", em " + state.data.municipios[best.f[3]].nome + ", às " + hhmm(localMinOfDay(best.f[2])));
+      }
+      parts.push('<span class="fine">Sua localização é usada só no seu navegador e não é enviada a nenhum servidor.</span>');
+      show(parts.map(function (t) { return "<p>" + t + "</p>"; }).join(""));
+      if (fromMap && MOBILE) out.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
+    }, function (err) {
+      btn.removeAttribute("aria-busy");
+      show(err.code === 1
+        ? "Você não permitiu o acesso à localização. Para usar, libere a localização para este site nas configurações do navegador e toque de novo."
+        : "Não foi possível obter sua localização agora. Verifique se a localização do aparelho está ligada e tente de novo.");
+    }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+  }
+  document.getElementById("near-btn").addEventListener("click", function () { nearMe(false); });
+  function LocateControl() {}
+  LocateControl.prototype.onAdd = function () {
+    var bar = document.createElement("div");
+    bar.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "reset-view";
+    btn.title = "O ar perto de mim";
+    btn.setAttribute("aria-label", "O ar perto de mim");
+    btn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 15s5-4.6 5-8.5A5 5 0 0 0 3 6.5C3 10.4 8 15 8 15z"/><circle cx="8" cy="6.5" r="1.8"/></svg>';
+    btn.addEventListener("click", function () { nearMe(true); });
+    bar.appendChild(btn);
+    this._bar = bar;
+    return bar;
+  };
+  LocateControl.prototype.onRemove = function () { this._bar.remove(); };
+  map.addControl(new LocateControl(), "top-left");
 
 
   var mapReady = new Promise(function (resolve) {
@@ -1553,6 +1646,66 @@
     return '<svg class="spark" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="PM2.5 nas últimas 72 horas e previsão até o fim do dia">' + out.join("") + "</svg>";
   }
 
+  // ---------- histórico dos sensores ----------
+  function historyPoints() {
+    if (!state.hist) return [];
+    var from = Date.now() - 72 * 3600000;
+    return state.hist.pontos.map(function (p) { return { t: Date.parse(p[0]), v: p[1], n: p[2] }; })
+      .filter(function (p) { return p.t >= from; });
+  }
+  // Mediana dos sensores (linha cheia) e modelo CAMS (tracejado), nas últimas 72 h, em escala de tempo real.
+  function sensorChart(modelTimes, modelVals) {
+    var pts = historyPoints(), now = Date.now(), from = now - 72 * 3600000;
+    // horários do modelo estão na hora de Manaus (UTC−4)
+    var model = modelTimes.map(function (t, i) { return { t: Date.parse(t + ":00-04:00"), v: modelVals[i] }; })
+      .filter(function (p) { return p.v != null && p.t >= from && p.t <= now; });
+    var W = 360, H = 120, padL = 30, padR = 8, padT = 16, padB = 18;
+    var maxV = Math.max(OMS_PM25 * 2, Math.max.apply(null, pts.map(function (p) { return p.v; }).concat(model.map(function (p) { return p.v; })))) * 1.08;
+    var x = function (t) { return padL + (t - from) / (now - from) * (W - padL - padR); };
+    var y = function (v) { return padT + (1 - v / maxV) * (H - padT - padB); };
+    var ink = css("--ink"), muted = css("--muted"), line = css("--line"), ember = css("--ember"), good = css("--aqi-good");
+    var font = ' font-size="9" font-family="IBM Plex Mono, monospace"';
+    var out = [];
+    var step = [10, 25, 50, 100, 200, 250].filter(function (s) { return maxV / s <= 5; })[0] || 500;
+    for (var g = step; g < maxV; g += step) {
+      out.push('<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(g).toFixed(1) + '" y2="' + y(g).toFixed(1) + '" stroke="' + line + '"/>');
+      out.push('<text x="' + (padL - 4) + '" y="' + (y(g) + 3).toFixed(1) + '" text-anchor="end"' + font + ' fill="' + muted + '">' + g + "</text>");
+    }
+    // meia-noite em Manaus
+    for (var d = Math.ceil((from - 4 * 3600000) / 86400000) * 86400000 + 4 * 3600000; d < now; d += 86400000) {
+      var dt = new Date(d - 4 * 3600000);
+      out.push('<line x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + padT + '" y2="' + (H - padB) + '" stroke="' + line + '"/>');
+      out.push('<text x="' + (x(d) + 3).toFixed(1) + '" y="' + (H - 5) + '"' + font + ' fill="' + muted + '">' +
+        String(dt.getUTCDate()).padStart(2, "0") + "/" + String(dt.getUTCMonth() + 1).padStart(2, "0") + "</text>");
+    }
+    if (OMS_PM25 < maxV) {
+      out.push('<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(OMS_PM25).toFixed(1) + '" y2="' + y(OMS_PM25).toFixed(1) + '" stroke="' + good + '" stroke-width="1.2" stroke-dasharray="4 3"/>');
+    }
+    var path = function (arr) {
+      // não liga pontos com mais de 3 h de buraco entre eles
+      return arr.map(function (p, k) { var gap = k && p.t - arr[k - 1].t > 3 * 3600000; return (k && !gap ? "L" : "M") + x(p.t).toFixed(1) + "," + y(p.v).toFixed(1); }).join("");
+    };
+    if (model.length > 1) out.push('<path d="' + path(model) + '" fill="none" stroke="' + muted + '" stroke-width="1.3" stroke-dasharray="3 3"/>');
+    if (pts.length > 1) {
+      out.push('<path d="' + path(pts) + "L" + x(pts[pts.length - 1].t).toFixed(1) + "," + y(0) + "L" + x(pts[0].t).toFixed(1) + "," + y(0) + 'Z" fill="' + ember + '" fill-opacity="0.12"/>');
+      out.push('<path d="' + path(pts) + '" fill="none" stroke="' + ember + '" stroke-width="1.8" stroke-linejoin="round"/>');
+      var last = pts[pts.length - 1], peak = pts.reduce(function (a, b) { return b.v > a.v ? b : a; });
+      out.push('<circle cx="' + x(last.t).toFixed(1) + '" cy="' + y(last.v).toFixed(1) + '" r="3.5" fill="' + ember + '"/>');
+      if (peak !== last) {
+        var px = x(peak.t), anchor = px > W - 90 ? "end" : px < padL + 60 ? "start" : "middle";
+        out.push('<circle cx="' + px.toFixed(1) + '" cy="' + y(peak.v).toFixed(1) + '" r="3" fill="none" stroke="' + ink + '" stroke-width="1.4"/>');
+        out.push('<text x="' + px.toFixed(1) + '" y="' + (y(peak.v) - 6).toFixed(1) + '" text-anchor="' + anchor + '"' + font + ' fill="' + ink + '">pico ' + Math.round(peak.v) + "</text>");
+      }
+    }
+    var pk = pts.reduce(function (a, b) { return b.v > a.v ? b : a; }, pts[0]);
+    var pkMin = pk.t / 60000, today = localDay(Date.now() / 60000);
+    var pkWhen = (localDay(pkMin) === today ? "hoje" : localDay(pkMin) === today - 1 ? "ontem" : fmtTime.format(new Date(pk.t)).slice(0, 5)) +
+      " às " + hhmm(localMinOfDay(pkMin)).slice(0, 2) + "h";
+    return '<p class="spark-cap">Últimas 72 h: <i></i>mediana dos sensores de Manaus <i class="model"></i>modelo CAMS. ' +
+      "Pior momento: <strong>" + Math.round(pk.v) + " µg/m³</strong>, " + pkWhen + ".</p>" +
+      '<svg class="spark" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="PM2.5 em Manaus nas últimas 72 horas: mediana dos sensores e modelo CAMS">' + out.join("") + "</svg>";
+  }
+
   function renderAir(air, weather) {
     var box = document.getElementById("air");
     var pm = air.current.pm2_5, aqi = air.current.us_aqi;
@@ -1586,8 +1739,9 @@
       (aqi > 200 ? " <strong>Evite atividades ao ar livre</strong>; se possível, fique em ambientes fechados e use máscara PFF2 ao sair." :
         aqi > 100 ? " Pessoas com asma, idosos e crianças devem evitar esforço ao ar livre." : "") + "</p>" +
       sensorsHtml +
-      (sensorsHtml ? '<p class="spark-cap">Últimas 72 h segundo o modelo CAMS (os sensores medem bem mais):</p>' : "") +
-      sparkline(times, values, nowIdx) +
+      (sensorsHtml && historyPoints().length >= 6
+        ? sensorChart(times, values)
+        : (sensorsHtml ? '<p class="spark-cap">Últimas 72 h segundo o modelo CAMS (os sensores medem bem mais):</p>' : "") + sparkline(times, values, nowIdx)) +
       '<dl class="facts">' +
         "<div><dt>Umidade</dt><dd>" + (weather ? weather.current.relative_humidity_2m + "%" : "—") + "</dd></div>" +
         "<div><dt>Temperatura</dt><dd>" + (weather ? weather.current.temperature_2m.toFixed(0) + "°C" : "—") + "</dd></div>" +
@@ -1675,8 +1829,25 @@
       renderDayChart(days.map(function (d) { return { d: d, n: perDay[d] || 0, today: d === today }; }), nowMod);
     }
 
-    // ar em Manaus hoje
-    if (state.air) {
+    // ar em Manaus hoje: sensores (histórico) quando houver; senão, o modelo
+    var today0 = localDay(Date.now() / 60000);
+    var histToday = state.hist ? state.hist.pontos.filter(function (p) { return localDay(Date.parse(p[0]) / 60000) === today0; }) : [];
+    var sensorDay = histToday.length >= 4;
+    if (sensorDay) {
+      var hrs = {}, hsum = 0, hpk = null;
+      histToday.forEach(function (p) {
+        var m = Date.parse(p[0]) / 60000, h = Math.floor(localMinOfDay(m) / 60);
+        hrs[h] = Math.max(hrs[h] || 0, p[1]);
+        hsum += p[1];
+        if (!hpk || p[1] > hpk.v) hpk = { v: p[1], h: hhmm(localMinOfDay(m)) };
+      });
+      var hmean = hsum / histToday.length, hours = Object.keys(hrs), habove = hours.filter(function (h) { return hrs[h] > OMS_PM25; }).length;
+      stats.push('<div><dt>PM2.5 médio hoje (sensores)</dt><dd>' + hmean.toFixed(0) + '<small>µg/m³</small></dd><span class="sum-sub">' +
+        (hmean / OMS_PM25).toFixed(1).replace(".", ",") + "× a referência da OMS</span></div>");
+      stats.push('<div><dt>Horas acima de 15 µg/m³ (sensores)</dt><dd>' + habove + "<small>de " + hours.length + '</small></dd><span class="sum-sub">pico de ' +
+        hpk.v.toFixed(0) + " às " + hpk.h + "</span></div>");
+    }
+    if (state.air && !sensorDay) {
       var times = state.air.hourly.time, vals = state.air.hourly.pm2_5, nowKey = state.air.current.time.slice(0, 13);
       var todayKey = state.air.current.time.slice(0, 10), sum = 0, n = 0, above = 0, peak = null;
       times.forEach(function (t, i) {
@@ -2026,6 +2197,13 @@
     });
   }
 
+  fetch("data/historico.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (d) {
+      state.hist = d;
+      if (state.air) renderAir(state.air, state.weather);
+      renderSummary();
+    })
+    .catch(function () { /* sem histórico, o gráfico continua com o modelo */ });
   fetch("data/sensores.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (d) {
       state.sensors = d;

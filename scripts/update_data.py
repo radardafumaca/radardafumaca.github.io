@@ -30,6 +30,11 @@ SENSORES = DATA / "sensores.json"
 SENSORES_ANTERIOR = DATA / "sensores.prev.json"
 SENSORES_VALIDADE_HORAS = 2
 PURPLEAIR_URL = "https://api.purpleair.com/v1/sensors"
+# Histórico da mediana dos sensores de Manaus (raio de 25 km do centro, como no painel).
+HISTORICO = DATA / "historico.json"
+HISTORICO_ANTERIOR = DATA / "historico.prev.json"
+HISTORICO_DIAS = 7
+MANAUS_RAIO_SENSORES_KM = 25
 # Leitura com os dois canais do sensor discordando muito (confiança baixa) fica de fora.
 CONFIANCA_MINIMA = 50
 # Focos publicados na rodada anterior: reserva se a FIRMS ficar fora do ar.
@@ -392,7 +397,7 @@ def sensores(now):
         return
     w, s_, e, n = (float(v) for v in region_bbox().split(","))
     query = urllib.parse.urlencode({
-        "fields": "name,latitude,longitude,last_seen,pm2.5_cf_1,humidity,confidence",
+        "fields": "sensor_index,name,latitude,longitude,last_seen,pm2.5_cf_1,humidity,confidence",
         "location_type": 0,  # só sensores externos
         "max_age": 3600,     # só os que enviaram dados na última hora
         "nwlng": w, "nwlat": n, "selng": e, "selat": s_,
@@ -421,6 +426,7 @@ def sensores(now):
                 continue
             umidade = r["humidity"] if r.get("humidity") is not None else 50
             lista.append({
+                "id": r["sensor_index"],
                 "nome": r["name"].strip(),
                 "rede": rede_do_sensor(r["name"]),
                 "lat": round(r["latitude"], 4),
@@ -445,6 +451,84 @@ def sensores(now):
     payload = {"atualizado_em": now.isoformat(timespec="minutes"), "descartados": descartados, "sensores": lista}
     SENSORES.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{len(lista)} sensores PurpleAir ({descartados} descartados por baixa confiança) -> {SENSORES}")
+    historico(now, lista, key)
+
+
+def mediana(valores):
+    v = sorted(valores)
+    m = len(v) // 2
+    return v[m] if len(v) % 2 else (v[m - 1] + v[m]) / 2
+
+
+def historico(now, lista, key):
+    """Acrescenta a mediana atual dos sensores de Manaus ao histórico e guarda os últimos 7 dias.
+
+    O histórico vem da rodada anterior (publicado no site). Se ele cobrir menos de 48 h,
+    completa as horas que faltam com a API de histórico da PurpleAir.
+    """
+    em_manaus = [x for x in lista if distance_km(*MANAUS, x["lat"], x["lon"]) <= MANAUS_RAIO_SENSORES_KM]
+    pontos = {}
+    for fonte in (HISTORICO_ANTERIOR, HISTORICO):
+        try:
+            for p in json.loads(fonte.read_text(encoding="utf-8"))["pontos"]:
+                pontos[p[0]] = p
+            break
+        except (OSError, ValueError, KeyError):
+            continue
+    if len(em_manaus) >= 3:
+        valores = [x["pm25"] for x in em_manaus]
+        # carimbo arredondado para 30 min: uma rodada atrasada substitui, não duplica
+        t = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0).isoformat(timespec="minutes")
+        pontos[t] = [t, round(mediana(valores), 1), len(valores), round(min(valores), 1), round(max(valores), 1)]
+
+    limite = (now - timedelta(days=HISTORICO_DIAS)).isoformat(timespec="minutes")
+    pontos = {t: p for t, p in pontos.items() if t >= limite}
+    cobertura_h = 0
+    if pontos:
+        inicio = datetime.fromisoformat(min(pontos))
+        cobertura_h = (now - inicio).total_seconds() / 3600
+    if cobertura_h < 48 and em_manaus:
+        for p in historico_purpleair(now, em_manaus, key):
+            pontos.setdefault(p[0], p)
+
+    serie = sorted(pontos.values())
+    HISTORICO.write_text(json.dumps({"atualizado_em": now.isoformat(timespec="minutes"),
+                                     "raio_km": MANAUS_RAIO_SENSORES_KM, "pontos": serie},
+                                    separators=(",", ":")), encoding="utf-8")
+    print(f"histórico: {len(serie)} pontos ({serie[0][0] if serie else '-'} a {serie[-1][0] if serie else '-'}) -> {HISTORICO}")
+
+
+def historico_purpleair(now, sensores_manaus, key):
+    """Médias horárias dos últimos 3 dias, por sensor, corrigidas pela EPA; mediana entre sensores."""
+    inicio = int((now - timedelta(days=3)).timestamp())
+    por_hora = defaultdict(list)
+    for sensor in sensores_manaus:
+        query = urllib.parse.urlencode({"start_timestamp": inicio, "average": 60,
+                                        "fields": "pm2.5_cf_1_a,pm2.5_cf_1_b,humidity"})
+        req = urllib.request.Request(f"{PURPLEAIR_URL}/{sensor['id']}/history?{query}", headers={"X-API-Key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response:
+                resposta = json.load(response)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+            continue
+        campos = resposta.get("fields", [])
+        for valores in resposta.get("data", []):
+            r = dict(zip(campos, valores))
+            a, b = r.get("pm2.5_cf_1_a"), r.get("pm2.5_cf_1_b")
+            if a is None or b is None:
+                continue
+            # canais discordando muito: leitura descartada (mesmo critério de confiança da PurpleAir)
+            if abs(a - b) > 5 and abs(a - b) / max((a + b) / 2, 1e-6) > 0.7:
+                continue
+            umidade = r.get("humidity") if r.get("humidity") is not None else 50
+            hora = datetime.fromtimestamp(r["time_stamp"], timezone.utc).replace(minute=0, second=0, microsecond=0)
+            por_hora[hora.isoformat(timespec="minutes")].append(pm25_epa((a + b) / 2, umidade))
+    pontos = []
+    for t, valores in por_hora.items():
+        if len(valores) >= 3:
+            pontos.append([t, round(mediana(valores), 1), len(valores), round(min(valores), 1), round(max(valores), 1)])
+    print(f"histórico preenchido pela PurpleAir: {len(pontos)} horas de {len(sensores_manaus)} sensores")
+    return pontos
 
 
 def grade_anterior(grade_atual):

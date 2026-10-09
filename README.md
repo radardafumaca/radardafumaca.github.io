@@ -22,9 +22,11 @@ A página precisa ser aberta por um servidor (não pelo arquivo direto), porque 
 - O índice "municípios que mais mandam fumaça" soma os focos de cada município, pesando pela distância até Manaus e pelo alinhamento com a direção do vento das últimas 6 h. É uma estimativa relativa, não uma medição.
 - `.github/workflows/update-data.yml` roda a cada 30 minutos no GitHub: baixa os focos e publica o site no GitHub Pages. O `data/focos.json` não vai para o git; ele é gerado na hora, localmente ou pela Action.
 
+- Sensores: a cada rodada, `update_data.py` busca os sensores PurpleAir da região (chave `PURPLEAIR_KEY`), corrige o PM2.5 pela fórmula da EPA para fumaça e grava `data/sensores.json`. A mediana dos sensores de Manaus vai para `data/historico.json` (7 dias); se o histórico tiver menos de 48 h, as horas que faltam vêm da API de histórico da PurpleAir.
+
 ## Publicação
 
-O site fica no GitHub Pages, publicado pela Action (em Settings → Pages, a fonte é "GitHub Actions"). A chave da FIRMS vai no secret `FIRMS_MAP_KEY` do repositório.
+O site fica no GitHub Pages, publicado pela Action (que também reativa a própria rotina agendada antes de o GitHub desligá-la por inatividade, aos 60 dias sem commit) (em Settings → Pages, a fonte é "GitHub Actions"). A chave da FIRMS vai no secret `FIRMS_MAP_KEY` do repositório.
 
 ## Fontes
 
